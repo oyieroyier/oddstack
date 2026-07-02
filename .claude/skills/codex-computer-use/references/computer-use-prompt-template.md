@@ -2,7 +2,7 @@
 
 Use this template for GUI, browser, screenshot, and visual QA tasks.
 
-```markdown
+````markdown
 You are Codex working on a tightly scoped UI/computer-use task. Use the safest available method: repository inspection and tests first; browser automation or Browser use for rendered web flows; true Computer Use only when the task cannot be completed through structured tools.
 
 ## Goal
@@ -51,8 +51,7 @@ Return:
 5. Files changed.
 6. Validation commands or repeated UI flow.
 7. Risks and coverage gaps.
-```
-```
+````
 
 ## Screenshot-only variant
 

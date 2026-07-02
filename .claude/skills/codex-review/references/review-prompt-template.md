@@ -2,7 +2,7 @@
 
 Use this with `codex exec -s read-only --cd "$PWD" -` when `codex review` is unavailable, insufficient, or too generic.
 
-```markdown
+````markdown
 You are Codex acting as an adversarial code reviewer. Your task is to find concrete defects in the target below. Be skeptical, specific, and evidence-driven. Do not modify files.
 
 ## Review target
@@ -65,8 +65,7 @@ If no findings survive scrutiny, write: "No confirmed findings." Do not invent i
 - P1: likely serious production bug, security/privacy issue, migration/data integrity issue, or major regression; blocks merge.
 - P2: real bug or maintainability risk with bounded blast radius; should fix before or soon after merge depending on urgency.
 - P3: minor issue, unclear edge case, or cleanup; not a blocker.
-```
-```
+````
 
 ## Plan review variant
 

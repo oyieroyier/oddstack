@@ -60,7 +60,7 @@ Run these checks before delegating:
 ```bash
 git status --short
 pwd
-find .. -name CLAUDE.md -o -name AGENTS.md -o -name README.md | sed 's#^./##' | head -50
+find . -maxdepth 3 \( -name CLAUDE.md -o -name AGENTS.md -o -name README.md \) -not -path '*/node_modules/*' | head -50
 ```
 
 Read any project guidance that applies to the current directory. If the work touches package management, build tooling, migrations, deployment, authentication, authorization, payments, or data deletion, inspect the relevant docs and guardrails before asking Codex to edit.
@@ -116,7 +116,10 @@ For longer or high-risk runs, capture Codex's final message and logs:
 ```bash
 mkdir -p .codex-runs
 run_id="$(date +%Y%m%d-%H%M%S)"
-cat .codex-runs/${run_id}.prompt.md | codex exec -s workspace-write --cd "$PWD" - \
+cat > .codex-runs/${run_id}.prompt.md <<'PROMPT'
+[write the self-contained implementation prompt here]
+PROMPT
+codex exec -s workspace-write --cd "$PWD" - < .codex-runs/${run_id}.prompt.md \
   | tee .codex-runs/${run_id}.output.txt
 ```
 

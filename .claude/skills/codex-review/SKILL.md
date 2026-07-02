@@ -63,7 +63,7 @@ git remote -v | sed -n '1,4p'
 Identify applicable project guidance:
 
 ```bash
-find .. -name CLAUDE.md -o -name AGENTS.md -o -name README.md | sed 's#^./##' | head -50
+find . -maxdepth 3 \( -name CLAUDE.md -o -name AGENTS.md -o -name README.md \) -not -path '*/node_modules/*' | head -50
 ```
 
 Read relevant guidance before composing the review prompt.

@@ -2,7 +2,7 @@
 
 Copy this template into a heredoc or `.codex-runs/<id>.prompt.md` file. Fill every bracketed section or delete it if it truly does not apply.
 
-```markdown
+````markdown
 You are Codex running inside this repository as an implementation agent. Your job is to produce a minimal, correct patch for the task below, then validate it.
 
 ## Task
@@ -53,8 +53,7 @@ Return a concise report with:
 2. Files changed.
 3. Verification commands run and their results.
 4. Any known risks, skipped tests, or follow-up recommendations.
-```
-```
+````
 
 ## Stronger variants
 
