@@ -1,10 +1,11 @@
 # Codex Claude Skills
 
-This bundle contains three project-local Claude Code skills:
+This bundle contains four project-local Claude Code skills:
 
 - `codex-implementation` — delegates implementation and investigation work to Codex CLI with self-contained prompts.
 - `codex-review` — performs adversarial, read-only reviews of diffs, plans, branches, commits, and Codex-generated patches.
 - `codex-computer-use` — prepares scoped GUI/browser/screenshot/desktop-app QA tasks for Codex Computer Use, Browser use, Chrome, image inputs, or safe local browser automation.
+- `ui-nitpicker` — a ruthlessly exacting design-engineer persona (Apple/Airbnb/Stripe pedigree) for UI reviews, design-spec enforcement, journey/flow critique, and plan-first frontend implementation. Willing to radically restructure layouts and paradigms; blocks on design-spec deviations and frontend anti-patterns.
 
 ## Directory layout
 
@@ -27,6 +28,13 @@ This bundle contains three project-local Claude Code skills:
       browser-ui-checklist.md
       computer-use-prompt-template.md
       safety-state-and-observation.md
+  ui-nitpicker/
+    SKILL.md
+    references/
+      design-review-rubric.md
+      intuition-and-flow.md
+      frontend-standards.md
+      plan-template.md
 CLAUDE.md.codex-skills-snippet.md
 install.sh
 ```
@@ -69,6 +77,7 @@ Expected:
 .claude/skills/codex-implementation/SKILL.md
 .claude/skills/codex-review/SKILL.md
 .claude/skills/codex-computer-use/SKILL.md
+.claude/skills/ui-nitpicker/SKILL.md
 ```
 
 Also verify that Codex is available:
@@ -93,6 +102,10 @@ Use codex-review adversarially on my uncommitted changes. Block on correctness, 
 
 ```text
 Use codex-computer-use to prepare a scoped browser QA pass for the local checkout flow. Do not touch production or billing actions.
+```
+
+```text
+Use ui-nitpicker to review this dashboard screenshot against our design spec, then plan the redesign before touching code.
 ```
 
 ## Notes

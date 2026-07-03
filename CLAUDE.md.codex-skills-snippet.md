@@ -12,6 +12,7 @@ Use these skills when appropriate:
 - `codex-implementation`: delegate implementation, debugging, refactoring, or repository investigation to Codex via a self-contained `codex exec` prompt.
 - `codex-review`: run an adversarial read-only review of a diff, plan, branch, commit, or Codex-generated patch. Reviews must prioritize concrete correctness, security, reliability, data, and compatibility issues over reassurance.
 - `codex-computer-use`: prepare tightly scoped GUI, browser, screenshot, simulator, desktop-app, or visual QA tasks for Codex Computer Use, Browser use, Chrome, image input, or safe local browser automation.
+- `ui-nitpicker`: exacting design-engineer review and plan-first implementation of UIs. Use for design critiques of screenshots or frontend code, design-spec enforcement (spec deviations always block), user-journey and next-action review, and authoring architecture + implementation plans before building UI features.
 
 General rules:
 
