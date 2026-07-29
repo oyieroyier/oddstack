@@ -28,6 +28,8 @@ Next owner: [Codex | Claude | Operator | None]
 - Shared backlog path: [this file]
 - Pre-existing unrelated changes: [exact paths; never edit, stage, or revert]
 - Commit/push authority: [operator unless explicitly granted]
+- Peer audit policy: [required | offer | off]
+- Peer audit skip authority/reason: [none or value]
 
 ## Contract checkpoint
 
@@ -43,6 +45,8 @@ Next owner: [Codex | Claude | Operator | None]
 ## Codex queue
 
 - [ ] `C-001` [bounded backend, contract, integration, or review task]
+- [ ] `C-AUDIT-001` Audit Claude-authored frontend logic after `UI-001`; return BLOCK, CAUTION, or
+      PASS with evidence.
 
 ## Claude queue
 
@@ -65,6 +69,12 @@ None.
 | Owner   | Task ids | Changed paths | Checks and outcome    |
 | ------- | -------- | ------------- | --------------------- |
 | [owner] | [ids]    | [paths]       | [commands and result] |
+
+## Reciprocal review
+
+- Claude backend/contract review: [pending | verdict and evidence | explicitly skipped]
+- Codex frontend logic audit: [pending | BLOCK | CAUTION | PASS | INCONCLUSIVE | explicitly skipped]
+- Audit findings and adjudication: [stable finding ids and outcomes]
 
 ## Blockers and decisions
 

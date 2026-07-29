@@ -41,6 +41,7 @@ cp -R \
   "$bundle_root/.agents" \
   "$bundle_root/.claude" \
   "$bundle_root/review-hooks" \
+  "$bundle_root/scripts" \
   "$bundle_root/tests" \
   "$expected_root/"
 cp \
@@ -51,6 +52,7 @@ cp \
   "$bundle_root/doctor.sh" \
   "$bundle_root/install.sh" \
   "$bundle_root/package.sh" \
+  "$bundle_root/preferences.example.json" \
   "$expected_root/"
 
 tar_path="$bundle_root/codex-claude-skills.tar.gz"

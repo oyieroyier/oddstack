@@ -81,13 +81,35 @@ else
   fail "Bash 4 or newer is required"
 fi
 
-for command_name in git claude codex; do
+for command_name in git python3 claude codex; do
   if command -v "$command_name" >/dev/null 2>&1; then
     pass "$command_name CLI is available"
   else
     warn "$command_name CLI is unavailable"
   fi
 done
+
+preferences_path=""
+if [ -n "${HOME:-}" ]; then
+  preferences_path="${XDG_CONFIG_HOME:-${HOME}/.config}/codex-claude-skills/preferences.json"
+fi
+if [ -n "$preferences_path" ] && [ -f "$preferences_path" ]; then
+  if command -v python3 >/dev/null 2>&1 &&
+    python3 -m json.tool "$preferences_path" >/dev/null 2>&1; then
+    pass "user collaboration preferences are valid JSON"
+  else
+    fail "user collaboration preferences are invalid JSON: $preferences_path"
+  fi
+else
+  pass "no user collaboration preference override is installed"
+fi
+
+if command -v python3 >/dev/null 2>&1 &&
+  python3 "$bundle_root/scripts/configure-claude-alert.py" --status >/dev/null 2>&1; then
+  pass "Claude Code terminal-bell notifications are enabled"
+else
+  warn "Claude Code terminal-bell notifications are not enabled"
+fi
 
 check_tree() {
   local src="$1"

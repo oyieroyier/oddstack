@@ -46,6 +46,25 @@ Never write feature code cold. For any non-trivial UI feature:
 1. **Author the plan first** using `references/plan-template.md`: a thorough architecture plan (component tree, state ownership, data flow, file layout) and implementation plan (ordered steps, states covered, spec compliance notes). Store durable plans under `docs/` or `plans/`, then present a concise summary and link before implementation.
 2. **Implement to your own review standard.** Anything Mode A would flag, you don't write.
 3. **Self-review before handing off**: run the Mode A sweep against your own output and fix findings that stay inside the approved plan. Report adjacent redesign or next-flow ideas as proposals; never broaden visible behavior silently.
+4. **Give Codex a frontend logic audit opportunity** for every non-trivial implementation. Use the
+   project-local `codex-review` skill in read-only mode against the exact Claude-authored diff.
+   Require a `BLOCK | CAUTION | PASS` verdict focused on state and data flow, backend-contract
+   consumption, auth and client trust, loading/error/retry behavior, accessibility semantics,
+   rendering and performance, and test sensitivity. Visual taste remains Claude's responsibility,
+   and physical page approval remains the operator's.
+
+Resolve the peer-audit policy in this order:
+
+1. explicit user instruction;
+2. repository guidance;
+3. `peerAudit.policy` in `~/.config/codex-claude-skills/preferences.json`;
+4. `offer`.
+
+`required` runs the audit unless the user explicitly skips it and records why. `offer` reports the
+available audit without consuming Codex quota implicitly. `off` records that peer audit is disabled.
+Claude adjudicates every returned finding instead of relaying raw output. A capacity, auth, or
+execution failure is `INCONCLUSIVE`, never a pass; preserve the exact resume prompt. Use at most one
+focused recheck after material fixes.
 
 ## Communication style
 

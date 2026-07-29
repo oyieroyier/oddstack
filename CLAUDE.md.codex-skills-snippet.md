@@ -13,6 +13,8 @@ Use these skills when appropriate:
 - `codex-review`: run an adversarial read-only review of a diff, plan, branch, commit, or Codex-generated patch. Reviews must prioritize concrete correctness, security, reliability, data, and compatibility issues over reassurance.
 - `codex-computer-use`: prepare tightly scoped GUI, browser, screenshot, simulator, desktop-app, or visual QA tasks for Codex Computer Use, Browser use, Chrome, image input, or safe local browser automation.
 - `ui-nitpicker`: exacting design-engineer review and plan-first implementation of UIs. Use for design critiques of screenshots or frontend code, design-spec enforcement (spec deviations always block), user-journey and next-action review, and authoring architecture + implementation plans before building UI features.
+- `deliberate-with-peer`: run a bounded, repository-grounded Claude–Codex deliberation with a
+  durable disagreement ledger, explicit sessions, and resumable capacity handling.
 
 General rules:
 
@@ -24,6 +26,9 @@ General rules:
 6. After any Codex implementation, Claude must inspect `git status`, `git diff`, and relevant tests before presenting the result.
 7. Before accepting non-trivial changes, run an adversarial review using `codex-review` or the equivalent direct read-only Codex prompt.
 8. When working from a `plans/agent-handoffs/` backlog, update its queues, evidence, status, next owner, and transition log before yielding. Never mark it complete while any model or operator queue remains open.
+9. After Claude authors non-trivial frontend code, give Codex a read-only logic-audit opportunity
+   under the configured peer-audit policy. Claude owns fixes and design quality; the operator owns
+   physical page approval.
 
 If the optional collaboration review hooks are activated:
 

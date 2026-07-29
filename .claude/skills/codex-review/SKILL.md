@@ -1,6 +1,6 @@
 ---
 name: codex-review
-description: Run a deliberately adversarial Codex review of code, diffs, plans, or implementations. Use before committing, opening a PR, accepting a Codex-generated patch, or whenever the user asks for a strict review, audit, second opinion, bug hunt, or risk assessment. Defaults to read-only and must prioritize finding correctness, security, reliability, and maintainability defects over reassurance.
+description: Run a deliberately adversarial Codex review of code, diffs, plans, or implementations. Use before committing or opening a PR, after Claude authors non-trivial frontend code, before accepting a Codex-generated patch, or whenever the user asks for a strict review, audit, second opinion, bug hunt, or risk assessment. Defaults to read-only and must prioritize finding correctness, security, reliability, and maintainability defects over reassurance.
 ---
 
 # Codex Review
@@ -32,6 +32,7 @@ Use this skill for:
 - Reviewing a branch against a base branch.
 - Reviewing a single commit or PR patch.
 - Reviewing a Codex-generated implementation before Claude accepts it.
+- Giving Codex an independent logic audit of Claude-authored frontend implementation.
 - Reviewing a proposed plan for hidden risks before implementation.
 - Security, reliability, migration, API, or concurrency audits.
 
@@ -194,6 +195,12 @@ Codex must actively look for these classes of defects when relevant:
 - Broken loading, empty, error, disabled, mobile, keyboard, screen-reader, and high-latency states.
 - Focus traps, inaccessible labels, lost form state, and hydration mismatches.
 - Visual regressions hidden by happy-path screenshots.
+- Incorrect API-contract consumption, client-side authorization assumptions, stale data, unsafe
+  optimistic updates, retry duplication, and state transitions that lose or corrupt user intent.
+
+For Claude-authored UI, review logic and engineering independently. Do not overrule the owning
+design system or substitute Codex's visual taste for Claude's design review. Never approve a manual
+page-audit entry.
 
 ### Maintainability
 

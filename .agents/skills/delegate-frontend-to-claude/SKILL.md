@@ -25,6 +25,8 @@ Required rules:
 
 - Record every Codex, Claude, and operator task before delegation.
 - Give each task a stable id and checkbox.
+- Create a `C-AUDIT-*` task for Codex's post-implementation frontend logic audit unless the user
+  explicitly disabled peer audit; record any skip reason.
 - Update status, next owner, exact changed paths, checks, and transition log before yielding.
 - Let Claude edit `apps/web/`, its tests, and this backlog only.
 - Put backend findings in the Codex return queue with evidence and acceptance criteria.
@@ -146,6 +148,21 @@ git ls-files --others --exclude-standard
 
 Inspect every frontend diff and untracked file. Confirm that Claude did not modify backend-owned paths, contracts, dependencies, generated files, or unrelated surfaces. Adjudicate every backend finding against the source and tests; money/security MUST-FIX findings require the repository's operator acknowledgement. Treat Claude's final report as a lead, not proof.
 
+Complete the recorded `C-AUDIT-*` task before integration unless it was explicitly skipped. Return
+`BLOCK | CAUTION | PASS` and inspect:
+
+- state ownership and data flow;
+- backend-contract and serialization usage;
+- auth, tenant scope, permissions, and client-trust assumptions;
+- loading, empty, error, retry, concurrency, and stale-data behavior;
+- accessibility semantics and keyboard behavior;
+- rendering cost, request count, bundle impact, and test sensitivity.
+
+This is Codex's independent logic and integration audit of Claude-authored frontend code. Do not
+substitute Codex's visual taste for Claude's design review, and never approve a manual page-audit
+entry. If the audit is skipped, record who authorized it and why. If capacity or execution prevents
+the audit, mark it `INCONCLUSIVE`, keep the task open, and leave an exact resume prompt.
+
 Before claiming the integrated work is fixed, complete, passing, or ready:
 
 1. Name the command or observation that proves that exact claim.
@@ -171,6 +188,7 @@ State:
 - what Codex implemented and verified on the backend;
 - what Claude implemented on the frontend;
 - Claude's backend review verdict and Codex's adjudication;
+- Codex's frontend logic-audit verdict, findings, adjudication, or explicit skip/inconclusive state;
 - whether ownership boundaries were preserved;
 - the exact checks run and outcomes;
 - remaining risks, baseline failures, or visual review still requiring a human;

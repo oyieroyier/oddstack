@@ -1,0 +1,4 @@
+interface:
+  display_name: "Deliberate with Peer"
+  short_description: "Reconcile grounded Claude and Codex positions"
+  default_prompt: "Use $deliberate-with-peer to get a grounded peer position, reconcile disagreements, and preserve a resumable decision record."

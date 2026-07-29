@@ -32,6 +32,36 @@ new_repo() {
   printf '%s\n' "$repo"
 }
 
+new_deliberation() {
+  local repo="$1"
+  local path="$repo/plans/model-deliberations/test.md"
+
+  mkdir -p "$(dirname "$path")"
+  cat >"$path" <<'EOF'
+# Model deliberation: fixture
+
+Status: IN_PROGRESS
+Next owner: Claude
+
+## Task
+
+Fixture task.
+
+## Configuration
+
+- Calls completed: 0
+
+## Disagreement ledger
+
+None.
+
+## Resume
+
+- Exact next prompt: continue
+EOF
+  printf '%s\n' "$path"
+}
+
 test_install_is_inactive() {
   local repo
   repo="$(new_repo inactive)"
@@ -126,12 +156,152 @@ test_bootstrap_activation() {
   fi
 }
 
+test_claude_alert_configuration() {
+  local settings_root="$test_root/claude-alert"
+  local settings_path="$settings_root/settings.json"
+
+  mkdir -p "$settings_root"
+  printf '%s\n' '{"theme":"dark"}' >"$settings_path"
+  if python3 "$bundle_root/scripts/configure-claude-alert.py" \
+    --settings "$settings_path" >/dev/null &&
+    python3 - "$settings_path" <<'PY'
+import json
+import pathlib
+import sys
+
+value = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+raise SystemExit(
+    0
+    if value.get("theme") == "dark"
+    and value.get("preferredNotifChannel") == "terminal_bell"
+    else 1
+)
+PY
+  then
+    pass "Claude alert setup preserves settings and enables the terminal bell"
+  else
+    fail "Claude alert setup preserves settings and enables the terminal bell"
+  fi
+}
+
+test_peer_runner_dry_runs() {
+  local repo
+  local deliberation
+  local prompt="$test_root/peer-prompt.md"
+  local preferences="$test_root/preferences.json"
+  repo="$(new_repo peer-dry-run)"
+  deliberation="$(new_deliberation "$repo")"
+  printf '%s\n' "Challenge this proposal." >"$prompt"
+  cp "$bundle_root/preferences.example.json" "$preferences"
+
+  if "$bundle_root/.agents/skills/deliberate-with-peer/scripts/run-claude-peer.sh" \
+    --repo "$repo" \
+    --prompt-file "$prompt" \
+    --deliberation-file "$deliberation" \
+    --preferences "$preferences" \
+    --dry-run 2>&1 | grep -q 'model: fable' &&
+    "$bundle_root/.claude/skills/deliberate-with-peer/scripts/run-codex-peer.sh" \
+      --repo "$repo" \
+      --prompt-file "$prompt" \
+      --deliberation-file "$deliberation" \
+      --preferences "$preferences" \
+      --dry-run 2>&1 | grep -q 'model: gpt-5.6-sol'; then
+    pass "peer runners resolve configurable models without launching either CLI"
+  else
+    fail "peer runners resolve configurable models without launching either CLI"
+  fi
+}
+
+test_peer_runner_outputs() {
+  local repo
+  local deliberation
+  local prompt="$test_root/peer-output-prompt.md"
+  local fake_bin="$test_root/fake-peer-bin"
+  repo="$(new_repo peer-output)"
+  deliberation="$(new_deliberation "$repo")"
+  printf '%s\n' "Ground and challenge this." >"$prompt"
+  mkdir -p "$fake_bin"
+
+  cat >"$fake_bin/claude" <<'EOF'
+#!/usr/bin/env bash
+cat >/dev/null
+printf '%s\n' '{"type":"result","result":"Claude grounded position"}'
+EOF
+  cat >"$fake_bin/codex" <<'EOF'
+#!/usr/bin/env bash
+output_file=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-o" ]; then
+    output_file="$2"
+    shift 2
+  else
+    shift
+  fi
+done
+cat >/dev/null
+printf '%s\n' "Codex grounded position" >"$output_file"
+printf '%s\n' '{"type":"thread.started","thread_id":"11111111-1111-1111-1111-111111111111"}'
+EOF
+  chmod +x "$fake_bin/claude" "$fake_bin/codex"
+
+  if PATH="$fake_bin:$PATH" \
+    "$bundle_root/.agents/skills/deliberate-with-peer/scripts/run-claude-peer.sh" \
+      --repo "$repo" \
+      --prompt-file "$prompt" \
+      --deliberation-file "$deliberation" 2>/dev/null |
+      grep -q 'Claude grounded position' &&
+    PATH="$fake_bin:$PATH" \
+      "$bundle_root/.claude/skills/deliberate-with-peer/scripts/run-codex-peer.sh" \
+      --repo "$repo" \
+      --prompt-file "$prompt" \
+      --deliberation-file "$deliberation" 2>/dev/null |
+      grep -q 'Codex grounded position'; then
+    pass "peer runners capture bounded responses from both CLIs"
+  else
+    fail "peer runners capture bounded responses from both CLIs"
+  fi
+}
+
+test_cross_environment_protocol_stays_synced() {
+  if cmp -s \
+    "$bundle_root/.agents/skills/deliberate-with-peer/references/protocol.md" \
+    "$bundle_root/.claude/skills/deliberate-with-peer/references/protocol.md" &&
+    cmp -s \
+      "$bundle_root/.agents/skills/deliberate-with-peer/references/deliberation-template.md" \
+      "$bundle_root/.claude/skills/deliberate-with-peer/references/deliberation-template.md" &&
+    cmp -s \
+      "$bundle_root/.agents/skills/deliberate-with-peer/scripts/read-preference.py" \
+      "$bundle_root/.claude/skills/deliberate-with-peer/scripts/read-preference.py"; then
+    pass "cross-environment deliberation protocol remains synchronized"
+  else
+    fail "cross-environment deliberation protocol remains synchronized"
+  fi
+}
+
+test_reciprocal_frontend_audit_contract() {
+  if grep -q 'C-AUDIT-' \
+    "$bundle_root/.agents/skills/delegate-frontend-to-claude/SKILL.md" &&
+    grep -q 'frontend logic audit opportunity' \
+      "$bundle_root/.claude/skills/ui-nitpicker/SKILL.md" &&
+    grep -q 'Claude-authored frontend' \
+      "$bundle_root/.claude/skills/codex-review/SKILL.md"; then
+    pass "delegated and direct Claude frontend work expose the Codex audit"
+  else
+    fail "delegated and direct Claude frontend work expose the Codex audit"
+  fi
+}
+
 test_install_is_inactive
 test_drift_refusal
 test_explicit_force
 test_symlink_refusal
 test_doctor_is_read_only
 test_bootstrap_activation
+test_claude_alert_configuration
+test_peer_runner_dry_runs
+test_peer_runner_outputs
+test_cross_environment_protocol_stays_synced
+test_reciprocal_frontend_audit_contract
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures of $tests tests failed" >&2

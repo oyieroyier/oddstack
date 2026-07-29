@@ -10,6 +10,7 @@ The bundle supports both directions:
 
 - Claude → Codex for implementation, investigation, adversarial review, and computer-use prompts.
 - Codex → Claude for a frontend slice backed by a durable, bidirectional task backlog.
+- Either model → the other for bounded, grounded ideation and architecture deliberation.
 
 These are workflow and prompt wrappers. They do not install either CLI, authenticate accounts,
 grant permissions, or bypass sandboxing.
@@ -24,20 +25,22 @@ but does not activate it or change Git configuration.
 | `codex-implementation`        | Claude Code | Codex        | Bounded implementation, debugging, refactoring, tests, or investigation      |
 | `codex-review`                | Claude Code | Codex        | Adversarial, read-only review of a diff, plan, branch, commit, or patch      |
 | `codex-computer-use`          | Claude Code | Codex        | Safe preparation of browser, screenshot, desktop, or visual-QA work          |
-| `ui-nitpicker`                | Claude Code | —            | Exacting UI review and plan-first frontend implementation                    |
+| `ui-nitpicker`                | Claude Code | Codex        | UI implementation plus optional/required Codex frontend-logic audit          |
 | `delegate-frontend-to-claude` | Codex       | Claude Code  | Backend-first delegation of a bounded frontend slice with resumable queues   |
+| `deliberate-with-peer`        | Either      | Other model  | Grounded proposals, critique, adjudication, and bounded consensus            |
 | `setup-collaboration-hooks`   | Codex       | —            | Safe installation, adaptation, composition, and deactivation of review hooks |
 
 ## How the two-way workflow works
 
-| Phase          | Owner           | Responsibility                                                           |
-| -------------- | --------------- | ------------------------------------------------------------------------ |
-| 1. Scope       | Codex           | Record the request, ownership boundaries, queues, and starting state     |
-| 2. Backend     | Codex           | Implement and verify backend behavior and shared contracts               |
-| 3. Frontend    | Claude          | Review the backend contract, implement the UI slice, and report findings |
-| 4. Return work | Codex or Claude | Route confirmed findings through the appropriate model queue             |
-| 5. Integration | Codex           | Inspect the complete diff, run combined checks, and update the backlog   |
-| 6. Delivery    | Operator        | Decide whether to commit, push, open a pull request, or merge            |
+| Phase          | Owner           | Responsibility                                                             |
+| -------------- | --------------- | -------------------------------------------------------------------------- |
+| 1. Scope       | Codex           | Record the request, ownership boundaries, queues, and starting state       |
+| 2. Backend     | Codex           | Implement and verify backend behavior and shared contracts                 |
+| 3. Frontend    | Claude          | Review the backend contract, implement the UI slice, and report findings   |
+| 4. Return work | Codex or Claude | Route confirmed findings through the appropriate model queue               |
+| 5. Audit       | Codex           | Audit Claude's frontend logic and report a separate evidence-based verdict |
+| 6. Integration | Codex           | Inspect the complete diff, run combined checks, and update the backlog     |
+| 7. Delivery    | Operator        | Decide whether to commit, push, open a pull request, or merge              |
 
 Delegation state lives in:
 
@@ -56,7 +59,7 @@ points to this file; it never replaces it.
 - Codex CLI installed and authenticated for Codex-owned work.
 - Bash 4 or newer for the installers, hook scripts, and bundled Claude runner.
 - Git and standard Unix tools; AI pre-push review additionally requires `timeout` and `sha256sum`.
-- Python 3 only when rebuilding the ZIP archive with the documented release command.
+- Python 3 for peer preference parsing, session handling, alert configuration, and release archives.
 
 Verify the CLIs:
 
@@ -151,8 +154,10 @@ Expected skill entry points:
 
 ```text
 .agents/skills/delegate-frontend-to-claude/SKILL.md
+.agents/skills/deliberate-with-peer/SKILL.md
 .agents/skills/setup-collaboration-hooks/SKILL.md
 .claude/skills/codex-computer-use/SKILL.md
+.claude/skills/deliberate-with-peer/SKILL.md
 .claude/skills/codex-implementation/SKILL.md
 .claude/skills/codex-review/SKILL.md
 .claude/skills/ui-nitpicker/SKILL.md
@@ -178,6 +183,18 @@ The activation flag does not enable quota-consuming AI review, add CI secrets, c
 protection, or approve pages. Those remain separate operator decisions. Existing hook systems are
 still refused unless the operator explicitly selects `--replace-hooks-path`; use manual composition
 when both systems must remain active.
+
+In an interactive terminal, bootstrap also asks whether to enable Claude Code's user-level terminal
+bell when Claude finishes or needs attention. Automation can decide explicitly:
+
+```bash
+./bootstrap.sh --repo /path/to/your/repo --claude-alert enable
+./bootstrap.sh --repo /path/to/your/repo --claude-alert skip
+```
+
+The setting is merged into `~/.claude/settings.json` without replacing other keys. It uses Claude
+Code's supported `preferredNotifChannel: "terminal_bell"` setting; it does not install a
+quota-consuming hook.
 
 ## Optional collaboration review hooks
 
@@ -263,7 +280,7 @@ Use codex-computer-use to prepare a scoped browser QA pass for the local checkou
 ### Claude-owned UI work
 
 ```text
-Use ui-nitpicker to review this dashboard against our design spec, then write the implementation plan before changing the UI.
+Use ui-nitpicker to review this dashboard against our design spec, write the implementation plan, implement it, then give Codex a read-only frontend logic audit under my peer-audit policy.
 ```
 
 ### Codex → Claude frontend delegation
@@ -289,6 +306,54 @@ prompt_file="$(mktemp /tmp/claude-frontend-handoff.XXXXXX.md)"
 The runner refuses unrelated dirty files by default. Use `--allow-dirty` only after proving every
 existing change belongs to the delegated task. Use `--dry-run` to validate the inputs without
 launching Claude.
+
+### Reciprocal frontend audit
+
+Claude reviews Codex's backend and contract checkpoint before consuming it. After Claude implements
+the frontend, Codex separately audits the Claude-authored logic before integration. The Codex
+verdict covers state, data flow, contract consumption, permissions, failure states, accessibility
+semantics, rendering cost, and test sensitivity; Claude retains design ownership and fixes its
+frontend findings.
+
+Direct Claude Code UI work gets the same opportunity through `ui-nitpicker` → `codex-review`. The
+policy is `required`, `offer`, or `off`. An explicit skip records authority and reason; capacity or
+execution failure is `INCONCLUSIVE`, never a pass.
+
+### Grounded peer deliberation
+
+Invoke `deliberate-with-peer` from either environment:
+
+```text
+Use deliberate-with-peer to evaluate whether this checkout workflow belongs in the API or web shell. Ground both positions in the repository, reconcile material disagreements, and preserve the decision record.
+```
+
+The initiator remains in its current thread. The runner starts one fresh peer session for the
+decision and resumes that exact session for at most one focused rebuttal or confirmation. Session
+ids, positions, evidence, disagreements, adjudication, and the exact resume prompt live in:
+
+```text
+plans/model-deliberations/<task-slug>.md
+```
+
+Architecture and implementation plans can select Codex as artifact author and Claude as
+adversarial reviewer even when the request begins in Claude. The terminal states are `CONVERGED`,
+`CONVERGED_WITH_DISSENT`, `NEEDS_EXPERIMENT`, `NEEDS_OPERATOR`, or an explicit capacity/execution
+blocker. The flow never forces matching preferences or silently treats an unavailable peer as
+agreement.
+
+### Personal model and effort preferences
+
+Copy and edit the non-executable JSON example outside the project:
+
+```bash
+mkdir -p ~/.config/codex-claude-skills
+cp preferences.example.json ~/.config/codex-claude-skills/preferences.json
+```
+
+The example selects Claude Fable/high and GPT Sol/high for peer work, a two-call maximum,
+resume-within-task sessions, Codex-authored architecture, and an `offer` peer-audit policy. Explicit
+runner flags take precedence. Missing values preserve each environment's normal defaults. No
+fallback model is selected automatically.
 
 ## Safety and ownership
 
@@ -322,6 +387,7 @@ replacement conventions.
 
 ```text
 .agents/skills/
+  deliberate-with-peer/
   delegate-frontend-to-claude/
     SKILL.md
     agents/openai.yaml
@@ -333,6 +399,7 @@ replacement conventions.
     SKILL.md
 .claude/skills/
   codex-computer-use/
+  deliberate-with-peer/
   codex-implementation/
   codex-review/
   ui-nitpicker/
@@ -343,6 +410,7 @@ review-hooks/
   tests/
   README.md
   install.sh
+scripts/configure-claude-alert.py
 CLAUDE.md.codex-skills-snippet.md
 README.md
 LICENSE
@@ -350,6 +418,7 @@ bootstrap.sh
 doctor.sh
 install.sh
 package.sh
+preferences.example.json
 tests/
 codex-claude-skills.tar.gz
 codex-claude-skills.zip
