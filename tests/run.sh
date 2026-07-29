@@ -199,7 +199,7 @@ test_peer_runner_dry_runs() {
     --prompt-file "$prompt" \
     --deliberation-file "$deliberation" \
     --preferences "$preferences" \
-    --dry-run 2>&1 | grep -q 'model: fable' &&
+    --dry-run 2>&1 | grep -q 'model: claude-fable-5' &&
     "$bundle_root/.claude/skills/deliberate-with-peer/scripts/run-codex-peer.sh" \
       --repo "$repo" \
       --prompt-file "$prompt" \

@@ -350,7 +350,7 @@ mkdir -p ~/.config/codex-claude-skills
 cp preferences.example.json ~/.config/codex-claude-skills/preferences.json
 ```
 
-The example selects Claude Fable/high and GPT Sol/high for peer work, a two-call maximum,
+The example selects Claude Fable 5/high and GPT Sol/high for peer work, a two-call maximum,
 resume-within-task sessions, Codex-authored architecture, and an `offer` peer-audit policy. Explicit
 runner flags take precedence. Missing values preserve each environment's normal defaults. No
 fallback model is selected automatically.

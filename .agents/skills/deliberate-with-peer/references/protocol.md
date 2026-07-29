@@ -63,7 +63,7 @@ Supported shape:
 ```json
 {
   "claude": {
-    "model": "fable",
+    "model": "claude-fable-5",
     "effort": "high",
     "maxBudgetUsd": null
   },
