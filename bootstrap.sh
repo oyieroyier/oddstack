@@ -7,12 +7,15 @@ usage() {
 Usage:
   ./bootstrap.sh [--repo PATH] [--activate] [--profile NAME|PATH]
                  [--force-skills] [--force-hooks] [--replace-hooks-path]
-                 [--claude-alert ask|enable|skip]
+                 [--claude-alert ask|enable|skip] [--install-deps]
+                 [--deps-dry-run] [--dependency-package-manager NAME]
 
 The bootstrap always diagnoses first, installs from this directory, and
 diagnoses again. --activate is the explicit authorization to configure
 core.hooksPath and enable the deterministic hardening gates. It does not enable
 AI review, add CI secrets, configure branch protection, or approve pages.
+System packages remain unchanged unless --install-deps is supplied. Model CLIs,
+GitHub authentication, and credentials are always operator-managed.
 In an interactive terminal it asks whether to enable Claude Code's user-level
 completion bell. Automation can choose with --claude-alert.
 EOF
@@ -25,6 +28,9 @@ force_skills=0
 force_hooks=0
 replace_hooks_path=0
 claude_alert="ask"
+install_deps=0
+deps_dry_run=0
+dependency_package_manager=""
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -68,6 +74,23 @@ while [ "$#" -gt 0 ]; do
       claude_alert="$2"
       shift 2
       ;;
+    --install-deps)
+      install_deps=1
+      shift
+      ;;
+    --deps-dry-run)
+      install_deps=1
+      deps_dry_run=1
+      shift
+      ;;
+    --dependency-package-manager)
+      [ "$#" -ge 2 ] || {
+        usage >&2
+        exit 2
+      }
+      dependency_package_manager="$2"
+      shift 2
+      ;;
     --help | -h)
       usage
       exit 0
@@ -97,6 +120,16 @@ if [ -z "$repo_root" ]; then
 fi
 
 echo "[bootstrap] preflight diagnosis"
+if [ "$install_deps" = "1" ]; then
+  dependency_args=(install --repo "$repo_root")
+  if [ "$deps_dry_run" = "1" ]; then
+    dependency_args+=(--dry-run)
+  fi
+  if [ -n "$dependency_package_manager" ]; then
+    dependency_args+=(--package-manager "$dependency_package_manager")
+  fi
+  python3 "$bundle_root/scripts/manage-dependencies.py" "${dependency_args[@]}"
+fi
 "$bundle_root/doctor.sh" --repo "$repo_root" --skip-archives
 
 install_args=(--repo "$repo_root")

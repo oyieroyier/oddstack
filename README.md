@@ -58,8 +58,10 @@ points to this file; it never replaces it.
 - Claude Code CLI installed and authenticated for Claude-owned work.
 - Codex CLI installed and authenticated for Codex-owned work.
 - Bash 4 or newer for the installers, hook scripts, and bundled Claude runner.
-- Git and standard Unix tools; AI pre-push review additionally requires `timeout` and `sha256sum`.
+- Git and standard Unix tools (`rg`, `sed`, `awk`, `grep`, and `find`); AI pre-push review
+  additionally requires `timeout` and `sha256sum`.
 - Python 3 for peer preference parsing, session handling, alert configuration, and release archives.
+- Node and pnpm only when the target repository's configured checks use them.
 
 Verify the CLIs:
 
@@ -137,11 +139,11 @@ Run the read-only doctor against the target repository:
 ./doctor.sh --repo /path/to/your/repo
 ```
 
-It reports a capability matrix covering bundled skill presence and drift, CLI availability, the
-active Git hook path, hook executability, AI-review state, the `implement` → `/tdd` dependency,
-manual page-audit safeguards, and release-archive freshness. Warnings are advisory by default;
-`--strict` makes them fail. The doctor does not install skills, change Git config, enable AI review,
-or approve pages.
+It reports a capability matrix covering system dependencies, bundled skill presence and drift, CLI
+availability, GitHub CLI authentication, the active Git hook path, hook executability, AI-review
+state, the `implement` → `/tdd` dependency, manual page-audit safeguards, and release-archive
+freshness. Warnings are advisory by default; `--strict` makes them fail. The doctor does not install
+packages or skills, change Git config, authenticate tools, enable AI review, or approve pages.
 
 For direct inspection from the target repository:
 
@@ -175,9 +177,22 @@ requested, activating their deterministic hardening gates:
   --profile generic
 ```
 
-It runs the doctor first, installs from the current bundle directory with drift protection,
-activates `pre-commit` and `pre-push` through `core.hooksPath`, then runs the doctor again. Omit
-`--activate` for install-only behavior.
+It runs a dependency capability report first, installs from the current bundle directory with drift
+protection, activates `pre-commit` and `pre-push` through `core.hooksPath`, then runs the full doctor
+again. Omit `--activate` for install-only behavior.
+
+Plain bootstrap never installs system packages. To explicitly install missing, safely mapped core
+dependencies or active hook dependencies, use:
+
+```bash
+./bootstrap.sh --repo /path/to/your/repo --install-deps
+```
+
+Use `--deps-dry-run` to print the package-manager command without executing it. The capability
+manager supports apt, dnf, yum, apk, pacman, and Homebrew. It does not install Node, pnpm, Claude,
+Codex, or the optional `gh` CLI because their versions, accounts, quotas, and authentication belong
+to the operator. It never authenticates credentials. `gh auth status` is checked read-only when
+`gh` is already installed.
 
 The activation flag does not enable quota-consuming AI review, add CI secrets, configure branch
 protection, or approve pages. Those remain separate operator decisions. Existing hook systems are
@@ -194,7 +209,10 @@ bell when Claude finishes or needs attention. Automation can decide explicitly:
 
 The setting is merged into `~/.claude/settings.json` without replacing other keys. It uses Claude
 Code's supported `preferredNotifChannel: "terminal_bell"` setting; it does not install a
-quota-consuming hook.
+quota-consuming hook. This remains Claude's own notification, not a copy of Codex's completion
+alert. When Codex launches a nested Claude task, Claude can ring as soon as its subprocess finishes
+while Codex continues integrating the result and later emits its own completion notification. The
+runners do not add a second wrapper bell.
 
 ## Optional collaboration review hooks
 
@@ -350,10 +368,12 @@ mkdir -p ~/.config/codex-claude-skills
 cp preferences.example.json ~/.config/codex-claude-skills/preferences.json
 ```
 
-The example selects Claude Fable 5/high and GPT Sol/high for peer work, a two-call maximum,
-resume-within-task sessions, Codex-authored architecture, and an `offer` peer-audit policy. Explicit
-runner flags take precedence. Missing values preserve each environment's normal defaults. No
-fallback model is selected automatically.
+The example selects Claude Fable 5/high and GPT 5.6 Sol/high for peer deliberation and architecture
+work, a two-call maximum, resume-within-task sessions, Codex-authored architecture, and an `offer`
+peer-audit policy. Only the two `deliberate-with-peer` runners read the model and effort fields.
+Implementation, frontend delegation, code review, hooks, and every other skill retain the
+developer's Claude or Codex environment defaults. Explicit runner flags take precedence. Missing
+values preserve each environment's normal defaults. No fallback model is selected automatically.
 
 ## Safety and ownership
 
@@ -411,6 +431,7 @@ review-hooks/
   README.md
   install.sh
 scripts/configure-claude-alert.py
+scripts/manage-dependencies.py
 CLAUDE.md.codex-skills-snippet.md
 README.md
 LICENSE

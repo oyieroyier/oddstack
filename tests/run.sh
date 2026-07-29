@@ -291,6 +291,97 @@ test_reciprocal_frontend_audit_contract() {
   fi
 }
 
+make_dependency_path() {
+  local path="$1"
+  shift
+
+  mkdir -p "$path"
+  for command_name in "$@"; do
+    ln -s "$(command -v "$command_name")" "$path/$command_name"
+  done
+}
+
+test_dependency_check_is_profile_aware() {
+  local repo
+  local fake_bin="$test_root/dependency-profile-bin"
+  local output
+  repo="$(new_repo dependency-profile)"
+  printf '%s\n' "AI_REVIEW_ENABLED=1" >"$repo/.review-hooks.conf"
+  make_dependency_path "$fake_bin" git python3 rg sed awk grep find
+
+  output="$(python3 "$bundle_root/scripts/manage-dependencies.py" \
+    install \
+    --repo "$repo" \
+    --search-path "$fake_bin" \
+    --package-manager apt \
+    --dry-run 2>&1)"
+
+  if grep -q 'apt-get install -y coreutils' <<<"$output" &&
+    grep -q 'Claude, Codex, gh, and credentials remain operator-managed' <<<"$output"; then
+    pass "dependency installer activates AI-review utilities without managing model credentials"
+  else
+    fail "dependency installer activates AI-review utilities without managing model credentials"
+  fi
+}
+
+test_dependency_install_is_explicit_and_dry_runnable() {
+  local repo
+  local fake_bin="$test_root/dependency-install-bin"
+  local output
+  repo="$(new_repo dependency-install)"
+  make_dependency_path "$fake_bin" git python3 sed awk grep find
+
+  output="$(python3 "$bundle_root/scripts/manage-dependencies.py" \
+    install \
+    --repo "$repo" \
+    --search-path "$fake_bin" \
+    --package-manager apt \
+    --dry-run 2>&1)"
+
+  if grep -q 'apt-get install -y ripgrep' <<<"$output" &&
+    grep -q 'Dry run only; no packages were installed' <<<"$output"; then
+    pass "dependency installation has an explicit non-mutating dry run"
+  else
+    fail "dependency installation has an explicit non-mutating dry run"
+  fi
+}
+
+test_missing_model_clis_are_manual_capabilities() {
+  local repo
+  local fake_bin="$test_root/dependency-model-bin"
+  local output
+  repo="$(new_repo dependency-model)"
+  make_dependency_path "$fake_bin" git python3 rg sed awk grep find
+
+  if output="$(python3 "$bundle_root/scripts/manage-dependencies.py" \
+    check \
+    --repo "$repo" \
+    --search-path "$fake_bin" 2>&1)" &&
+    grep -q 'WARN  claude' <<<"$output" &&
+    grep -q 'WARN  codex' <<<"$output"; then
+    pass "missing model CLIs require manual setup without blocking core installation"
+  else
+    fail "missing model CLIs require manual setup without blocking core installation"
+  fi
+}
+
+test_deliberation_preferences_and_alerts_stay_scoped() {
+  if grep -q 'claude.model' \
+    "$bundle_root/.agents/skills/deliberate-with-peer/scripts/run-claude-peer.sh" &&
+    grep -q 'codex.model' \
+      "$bundle_root/.claude/skills/deliberate-with-peer/scripts/run-codex-peer.sh" &&
+    ! grep -Rq 'codex-claude-skills/preferences.json' \
+      "$bundle_root/.agents/skills/delegate-frontend-to-claude" \
+      "$bundle_root/.claude/skills/codex-review" &&
+    ! grep -Rq "printf.*\\\\a" \
+      "$bundle_root/.agents/skills/deliberate-with-peer/scripts" \
+      "$bundle_root/.agents/skills/delegate-frontend-to-claude/scripts"; then
+    pass "expensive model preferences and Claude notifications remain narrowly scoped"
+  else
+    fail "expensive model preferences and Claude notifications remain narrowly scoped"
+  fi
+}
+
 test_install_is_inactive
 test_drift_refusal
 test_explicit_force
@@ -302,6 +393,10 @@ test_peer_runner_dry_runs
 test_peer_runner_outputs
 test_cross_environment_protocol_stays_synced
 test_reciprocal_frontend_audit_contract
+test_dependency_check_is_profile_aware
+test_dependency_install_is_explicit_and_dry_runnable
+test_missing_model_clis_are_manual_capabilities
+test_deliberation_preferences_and_alerts_stay_scoped
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures of $tests tests failed" >&2

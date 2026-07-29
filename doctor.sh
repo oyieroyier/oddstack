@@ -7,9 +7,9 @@ usage() {
 Usage:
   ./doctor.sh [--repo PATH] [--strict] [--skip-archives]
 
-Read-only capability and drift report. Warnings are informational by default;
---strict makes warnings fail. No hooks, skills, credentials, or approvals are
-changed.
+Read-only dependency, capability, and drift report. Warnings are informational
+by default; --strict makes warnings fail. No packages, hooks, skills,
+credentials, or approvals are changed.
 EOF
 }
 
@@ -81,13 +81,19 @@ else
   fail "Bash 4 or newer is required"
 fi
 
-for command_name in git python3 claude codex; do
-  if command -v "$command_name" >/dev/null 2>&1; then
-    pass "$command_name CLI is available"
-  else
-    warn "$command_name CLI is unavailable"
+if command -v python3 >/dev/null 2>&1; then
+  dependency_args=(check --repo "$repo_root")
+  if [ "$strict" = "1" ]; then
+    dependency_args+=(--strict)
   fi
-done
+  if python3 "$bundle_root/scripts/manage-dependencies.py" "${dependency_args[@]}"; then
+    pass "required and active conditional dependencies are available"
+  else
+    fail "required or active conditional dependencies are unavailable"
+  fi
+else
+  fail "python3 is required to run the dependency capability check"
+fi
 
 preferences_path=""
 if [ -n "${HOME:-}" ]; then
