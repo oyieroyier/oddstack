@@ -90,9 +90,17 @@ The installer copies:
 review-hooks/*    →  /path/to/your/repo/review-hooks/
 ```
 
-The copied hook module remains inactive. If the target already contains `review-hooks/`, the
-installer preserves it rather than overwriting repository policy; update that module explicitly
-after reviewing its diff.
+The copied hook module remains inactive. Before writing anything, the installer compares every
+existing bundled skill and `review-hooks/` directory with the bundle. Any drift is displayed and
+preserved. After reviewing the diff, `--force` explicitly updates bundled files:
+
+```bash
+./install.sh --repo /path/to/your/repo --force
+```
+
+This makes repeat installation safe for repositories whose local skill copies have evolved. Files
+that exist only in a drifted destination are retained even with `--force`; remove obsolete local
+files as a separate, reviewable change.
 
 To install manually:
 
@@ -120,7 +128,19 @@ cp -R .agents/skills/* ~/.agents/skills/
 
 ## Verify installation
 
-From the target repository:
+Run the read-only doctor against the target repository:
+
+```bash
+./doctor.sh --repo /path/to/your/repo
+```
+
+It reports a capability matrix covering bundled skill presence and drift, CLI availability, the
+active Git hook path, hook executability, AI-review state, the `implement` → `/tdd` dependency,
+manual page-audit safeguards, and release-archive freshness. Warnings are advisory by default;
+`--strict` makes them fail. The doctor does not install skills, change Git config, enable AI review,
+or approve pages.
+
+For direct inspection from the target repository:
 
 ```bash
 find .claude/skills .agents/skills -maxdepth 2 -name SKILL.md -print | sort
@@ -137,6 +157,27 @@ Expected skill entry points:
 .claude/skills/codex-review/SKILL.md
 .claude/skills/ui-nitpicker/SKILL.md
 ```
+
+## One-command bootstrap
+
+`bootstrap.sh` is the single entry point for installing the bundled helpers and, when explicitly
+requested, activating their deterministic hardening gates:
+
+```bash
+./bootstrap.sh \
+  --repo /path/to/your/repo \
+  --activate \
+  --profile generic
+```
+
+It runs the doctor first, installs from the current bundle directory with drift protection,
+activates `pre-commit` and `pre-push` through `core.hooksPath`, then runs the doctor again. Omit
+`--activate` for install-only behavior.
+
+The activation flag does not enable quota-consuming AI review, add CI secrets, configure branch
+protection, or approve pages. Those remain separate operator decisions. Existing hook systems are
+still refused unless the operator explicitly selects `--replace-hooks-path`; use manual composition
+when both systems must remain active.
 
 ## Optional collaboration review hooks
 
@@ -175,6 +216,27 @@ Repositories with a manual page-review ledger can add its advisory checker to
 stale approvals, demote affected routes with a specific reason, register new routes as `PENDING`,
 and report the operator queue. They must never approve a page: approval represents a person
 physically inspecting the rendered surface.
+
+## Optional engineering-flow dependency
+
+The broader Matt Pocock engineering flow's `implement` skill invokes `/tdd`. This collaboration
+bundle does not vendor that third-party flow, but the doctor detects a dangling reference when
+`implement` is installed without `tdd`.
+
+Install the upstream skill explicitly for agents that use that flow:
+
+```bash
+npx skills add https://github.com/mattpocock/skills \
+  --skill tdd \
+  --agent '*' \
+  --global \
+  --yes \
+  --copy \
+  --full-depth
+```
+
+Review upstream changes before updating it. Skill-directory install counts are discovery and
+popularity signals, not security or quality audit evidence.
 
 ## Usage
 
@@ -284,7 +346,11 @@ review-hooks/
 CLAUDE.md.codex-skills-snippet.md
 README.md
 LICENSE
+bootstrap.sh
+doctor.sh
 install.sh
+package.sh
+tests/
 codex-claude-skills.tar.gz
 codex-claude-skills.zip
 ```
@@ -295,32 +361,15 @@ The ZIP and TAR files are committed release artifacts. Rebuild both after any bu
 installer, snippet, or README change:
 
 ```bash
-repo_root="$PWD"
-release_dir="$(mktemp -d /tmp/codex-claude-skills-release.XXXXXX)"
-package_dir="$release_dir/codex-claude-skills"
-
-mkdir -p "$package_dir"
-cp -R .agents .claude review-hooks "$package_dir/"
-cp README.md LICENSE CLAUDE.md.codex-skills-snippet.md install.sh "$package_dir/"
-
-tar -C "$release_dir" \
-  -czf "$repo_root/codex-claude-skills.tar.gz" \
-  codex-claude-skills
-
-(
-  cd "$release_dir"
-  python3 -m zipfile \
-    -c "$repo_root/codex-claude-skills.zip" \
-    codex-claude-skills
-)
+./package.sh
 ```
 
 Verify the archive entry points and test installation from an extracted archive before committing:
 
 ```bash
-tar -tzf codex-claude-skills.tar.gz | sort
-python3 -m zipfile -l codex-claude-skills.zip
+./package.sh --check
 bash -n install.sh
+tests/run.sh
 review-hooks/tests/run.sh
 git diff --check
 ```

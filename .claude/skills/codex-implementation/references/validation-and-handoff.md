@@ -2,6 +2,19 @@
 
 Use this after Codex returns from an implementation run.
 
+## Evidence-before-claim gate
+
+Before saying that work is fixed, complete, passing, or ready:
+
+1. Identify the command or observation that proves the specific claim.
+2. Run that check fresh against the current working tree.
+3. Read the complete relevant output and exit status.
+4. Compare the evidence with the claim; report the actual state when they disagree.
+5. Only then state the result, naming the check that supports it.
+
+Delegated-agent summaries, earlier runs, partial checks, and a clean-looking diff are leads, not
+proof. Apply this gate before committing, pushing, opening a pull request, or returning control.
+
 ## Diff inspection
 
 Run:
@@ -74,4 +87,4 @@ Notes:
 - [Remaining risk or limitation]
 ```
 
-Never say "all tests pass" unless the relevant command output shows that.
+Never say "all tests pass" unless fresh, complete command output shows that.

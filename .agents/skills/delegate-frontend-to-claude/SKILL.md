@@ -146,6 +146,14 @@ git ls-files --others --exclude-standard
 
 Inspect every frontend diff and untracked file. Confirm that Claude did not modify backend-owned paths, contracts, dependencies, generated files, or unrelated surfaces. Adjudicate every backend finding against the source and tests; money/security MUST-FIX findings require the repository's operator acknowledgement. Treat Claude's final report as a lead, not proof.
 
+Before claiming the integrated work is fixed, complete, passing, or ready:
+
+1. Name the command or observation that proves that exact claim.
+2. Run it fresh against the current tree.
+3. Read its relevant output and exit status completely.
+4. Compare the evidence with the claim and report any mismatch.
+5. Only then make the claim and cite the proving check.
+
 Run the targeted backend and frontend checks together. For any change under `apps/web/src`, enforce the repository's visual-audit rule. Never approve visual-audit entries on the user's behalf.
 
 If a frontend defect remains, add it to Claude's backlog queue before creating a narrow follow-up
