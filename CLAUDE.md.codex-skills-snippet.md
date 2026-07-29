@@ -33,4 +33,7 @@ If the optional collaboration review hooks are activated:
 4. Treat `INCONCLUSIVE` as an infrastructure or coverage failure, not a clean review.
 5. Require a recorded human reason before skipping review or overriding blockers.
 6. Do not replace an existing hook system without explicit operator approval.
+7. If a manual page-review gate exists, agents may run its checker, demote stale approvals, and
+   register new pages as pending. Agents must never approve pages; approval records the operator
+   physically inspecting the rendered surface.
 ```

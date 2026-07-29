@@ -1,7 +1,10 @@
 # Codex ↔ Claude Skills
 
-A project-local skill bundle for handing bounded work between Claude Code and Codex without losing
-scope, ownership, review evidence, or resume state.
+An opinionated, configurable collaboration harness for handing bounded work between Claude Code and
+Codex without losing scope, ownership, review evidence, or resume state.
+
+It enforces conservative defaults around ownership, model spending, data egress, review scope, and
+Git hook activation while allowing repository-specific commands and path policies.
 
 The bundle supports both directions:
 
@@ -167,6 +170,12 @@ The installer refuses to replace an existing Husky, Lefthook, `.githooks`, or ot
 See [`review-hooks/README.md`](review-hooks/README.md) for the profile interface, resource budgets,
 credential rules, deactivation, and the LMM reference adapter.
 
+Repositories with a manual page-review ledger can add its advisory checker to
+`PRE_PUSH_COMMANDS`. The LMM reference profile does this with `pnpm audit:pages`. Agents may detect
+stale approvals, demote affected routes with a specific reason, register new routes as `PENDING`,
+and report the operator queue. They must never approve a page: approval represents a person
+physically inspecting the rendered surface.
+
 ## Usage
 
 ### Claude → Codex implementation
@@ -274,6 +283,7 @@ review-hooks/
   install.sh
 CLAUDE.md.codex-skills-snippet.md
 README.md
+LICENSE
 install.sh
 codex-claude-skills.tar.gz
 codex-claude-skills.zip
@@ -291,7 +301,7 @@ package_dir="$release_dir/codex-claude-skills"
 
 mkdir -p "$package_dir"
 cp -R .agents .claude review-hooks "$package_dir/"
-cp README.md CLAUDE.md.codex-skills-snippet.md install.sh "$package_dir/"
+cp README.md LICENSE CLAUDE.md.codex-skills-snippet.md install.sh "$package_dir/"
 
 tar -C "$release_dir" \
   -czf "$repo_root/codex-claude-skills.tar.gz" \
@@ -317,3 +327,11 @@ git diff --check
 
 When behavior changes, update the relevant skill, this README, and both archives in the same commit.
 Use Git tags or GitHub releases when consumers need a stable version instead of tracking `main`.
+
+## Author
+
+Bob Oyier
+
+## License
+
+Licensed under the [MIT License](LICENSE).

@@ -241,6 +241,17 @@ test_personal_quota_and_multi_ref_refusal() {
   fi
 }
 
+test_lmm_page_audit_contract() {
+  local profile="$module_root/profiles/lmm.example.conf"
+
+  if grep -q 'pnpm audit:pages' "$profile" &&
+    ! grep -q -- '--approve' "$profile"; then
+    pass "LMM profile checks page-audit state without approving pages"
+  else
+    fail "LMM profile checks page-audit state without approving pages"
+  fi
+}
+
 test_dry_run
 test_install_and_deactivate
 test_existing_hook_refusal_and_composition
@@ -249,6 +260,7 @@ test_pre_commit_checks
 test_pre_push_without_ai
 test_ai_review_and_sensitive_refusal
 test_personal_quota_and_multi_ref_refusal
+test_lmm_page_audit_contract
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures of $tests tests failed" >&2

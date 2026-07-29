@@ -115,6 +115,23 @@ classification, sensitive-path rules, budgets, and credential ownership.
 `profiles/lmm.example.conf` is a reference adapter for Sokko/Lipa Mdogo Mdogo. It is intentionally
 not a portable default.
 
+## Manual page-review gates
+
+Repositories can put a page-ledger checker in `PRE_PUSH_COMMANDS`. The LMM reference profile runs
+`pnpm audit:pages`, which detects ledger errors and stale approvals before AI review.
+
+Keep the operator-only action outside this module:
+
+- Agents may run the advisory checker.
+- Agents may demote a stale approval with the repository-prescribed command and a specific reason.
+- Agents may register a new route as `PENDING` and add it to the manual walkthrough.
+- Agents must report every `PENDING` or `REOPENED` route still awaiting review.
+- Agents and automated hooks must never invoke the page-approval command.
+
+Approval is evidence that a person physically inspected the rendered page. Automating it would
+erase the meaning of the release gate. Production deployment should enforce the repository's
+blocking page-audit mode separately.
+
 ## AI-review behavior
 
 When enabled, the pre-push gate:

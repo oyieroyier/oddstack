@@ -21,7 +21,9 @@ Install the optional hook module without silently replacing repository policy.
 8. Never enable AI review until repository naming, path classification, sensitive paths, credential
    ownership, and budgets have been reviewed.
 9. Never consume personal model quota implicitly.
-10. Verify hook syntax and run the bundled fixture tests before reporting completion.
+10. When a repository has a manual page-review ledger, configure only its checker and
+    agent-authorized demotion flow. Never automate operator approval.
+11. Verify hook syntax and run the bundled fixture tests before reporting completion.
 
 ## Install or update
 
@@ -69,5 +71,16 @@ preserves installed files:
 review-hooks/install.sh --repo "$PWD" --deactivate
 ```
 
+## Manual page review
+
+If the target repository requires physical page approval:
+
+1. Add its advisory page checker to `PRE_PUSH_COMMANDS`.
+2. Follow repository instructions for demoting stale approvals with a precise reason.
+3. Register new routes as `PENDING` in the ledger and walkthrough.
+4. Report every route awaiting operator review.
+5. Never invoke `--approve`, an approval helper, or any equivalent action. Approval belongs to the
+   person who physically inspected the rendered page.
+
 Report the active hook path, installed or retained files, selected profile, checks run, and whether
-AI review is enabled.
+AI review is enabled. Include the outstanding manual page-review queue when that contract exists.
