@@ -24,4 +24,13 @@ General rules:
 6. After any Codex implementation, Claude must inspect `git status`, `git diff`, and relevant tests before presenting the result.
 7. Before accepting non-trivial changes, run an adversarial review using `codex-review` or the equivalent direct read-only Codex prompt.
 8. When working from a `plans/agent-handoffs/` backlog, update its queues, evidence, status, next owner, and transition log before yielding. Never mark it complete while any model or operator queue remains open.
+
+If the optional collaboration review hooks are activated:
+
+1. Keep pre-commit checks deterministic; do not add model calls at commit scope.
+2. Run one bounded aggregate AI review at pre-push or pull-request scope.
+3. Never consume personal model quota implicitly.
+4. Treat `INCONCLUSIVE` as an infrastructure or coverage failure, not a clean review.
+5. Require a recorded human reason before skipping review or overriding blockers.
+6. Do not replace an existing hook system without explicit operator approval.
 ```

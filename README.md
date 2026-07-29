@@ -11,15 +11,19 @@ The bundle supports both directions:
 These are workflow and prompt wrappers. They do not install either CLI, authenticate accounts,
 grant permissions, or bypass sandboxing.
 
+The bundle also ships optional collaboration review hooks. Installing the bundle copies that module
+but does not activate it or change Git configuration.
+
 ## Skills at a glance
 
-| Skill                         | Invoked by  | Delegates to | Purpose                                                                    |
-| ----------------------------- | ----------- | ------------ | -------------------------------------------------------------------------- |
-| `codex-implementation`        | Claude Code | Codex        | Bounded implementation, debugging, refactoring, tests, or investigation    |
-| `codex-review`                | Claude Code | Codex        | Adversarial, read-only review of a diff, plan, branch, commit, or patch    |
-| `codex-computer-use`          | Claude Code | Codex        | Safe preparation of browser, screenshot, desktop, or visual-QA work        |
-| `ui-nitpicker`                | Claude Code | —            | Exacting UI review and plan-first frontend implementation                  |
-| `delegate-frontend-to-claude` | Codex       | Claude Code  | Backend-first delegation of a bounded frontend slice with resumable queues |
+| Skill                         | Invoked by  | Delegates to | Purpose                                                                      |
+| ----------------------------- | ----------- | ------------ | ---------------------------------------------------------------------------- |
+| `codex-implementation`        | Claude Code | Codex        | Bounded implementation, debugging, refactoring, tests, or investigation      |
+| `codex-review`                | Claude Code | Codex        | Adversarial, read-only review of a diff, plan, branch, commit, or patch      |
+| `codex-computer-use`          | Claude Code | Codex        | Safe preparation of browser, screenshot, desktop, or visual-QA work          |
+| `ui-nitpicker`                | Claude Code | —            | Exacting UI review and plan-first frontend implementation                    |
+| `delegate-frontend-to-claude` | Codex       | Claude Code  | Backend-first delegation of a bounded frontend slice with resumable queues   |
+| `setup-collaboration-hooks`   | Codex       | —            | Safe installation, adaptation, composition, and deactivation of review hooks |
 
 ## How the two-way workflow works
 
@@ -47,7 +51,8 @@ points to this file; it never replaces it.
 - Git repository with project instructions available to both agents.
 - Claude Code CLI installed and authenticated for Claude-owned work.
 - Codex CLI installed and authenticated for Codex-owned work.
-- Bash for `install.sh` and the bundled Claude runner.
+- Bash 4 or newer for the installers, hook scripts, and bundled Claude runner.
+- Git and standard Unix tools; AI pre-push review additionally requires `timeout` and `sha256sum`.
 - Python 3 only when rebuilding the ZIP archive with the documented release command.
 
 Verify the CLIs:
@@ -79,7 +84,12 @@ The installer copies:
 ```text
 .claude/skills/*  →  /path/to/your/repo/.claude/skills/
 .agents/skills/*  →  /path/to/your/repo/.agents/skills/
+review-hooks/*    →  /path/to/your/repo/review-hooks/
 ```
+
+The copied hook module remains inactive. If the target already contains `review-hooks/`, the
+installer preserves it rather than overwriting repository policy; update that module explicitly
+after reviewing its diff.
 
 To install manually:
 
@@ -88,6 +98,7 @@ mkdir -p /path/to/your/repo/.claude/skills
 mkdir -p /path/to/your/repo/.agents/skills
 cp -R .claude/skills/* /path/to/your/repo/.claude/skills/
 cp -R .agents/skills/* /path/to/your/repo/.agents/skills/
+cp -R review-hooks /path/to/your/repo/
 ```
 
 Optionally copy the relevant content from
@@ -117,11 +128,44 @@ Expected skill entry points:
 
 ```text
 .agents/skills/delegate-frontend-to-claude/SKILL.md
+.agents/skills/setup-collaboration-hooks/SKILL.md
 .claude/skills/codex-computer-use/SKILL.md
 .claude/skills/codex-implementation/SKILL.md
 .claude/skills/codex-review/SKILL.md
 .claude/skills/ui-nitpicker/SKILL.md
 ```
+
+## Optional collaboration review hooks
+
+The optional module separates deterministic commit checks from aggregate AI review:
+
+```text
+pre-commit → staged whitespace, secret scan, configured deterministic commands
+pre-push   → configured deterministic commands → bounded aggregate AI review
+```
+
+Inspect its interface and perform a dry run before activation:
+
+```bash
+sed -n '1,260p' review-hooks/README.md
+review-hooks/install.sh \
+  --repo "$PWD" \
+  --profile generic \
+  --dry-run
+```
+
+The generic profile leaves AI review disabled. Activation is a separate explicit command:
+
+```bash
+review-hooks/install.sh \
+  --repo "$PWD" \
+  --profile generic
+```
+
+The installer refuses to replace an existing Husky, Lefthook, `.githooks`, or other
+`core.hooksPath` configuration by default. Use `--no-activate` to compose with an existing system.
+See [`review-hooks/README.md`](review-hooks/README.md) for the profile interface, resource budgets,
+credential rules, deactivation, and the LMM reference adapter.
 
 ## Usage
 
@@ -214,11 +258,20 @@ replacement conventions.
       delegation-backlog-template.md
       frontend-handoff-template.md
     scripts/run-claude-frontend.sh
+  setup-collaboration-hooks/
+    SKILL.md
 .claude/skills/
   codex-computer-use/
   codex-implementation/
   codex-review/
   ui-nitpicker/
+review-hooks/
+  hooks/
+  profiles/
+  scripts/
+  tests/
+  README.md
+  install.sh
 CLAUDE.md.codex-skills-snippet.md
 README.md
 install.sh
@@ -237,7 +290,7 @@ release_dir="$(mktemp -d /tmp/codex-claude-skills-release.XXXXXX)"
 package_dir="$release_dir/codex-claude-skills"
 
 mkdir -p "$package_dir"
-cp -R .agents .claude "$package_dir/"
+cp -R .agents .claude review-hooks "$package_dir/"
 cp README.md CLAUDE.md.codex-skills-snippet.md install.sh "$package_dir/"
 
 tar -C "$release_dir" \
@@ -258,6 +311,7 @@ Verify the archive entry points and test installation from an extracted archive 
 tar -tzf codex-claude-skills.tar.gz | sort
 python3 -m zipfile -l codex-claude-skills.zip
 bash -n install.sh
+review-hooks/tests/run.sh
 git diff --check
 ```
 

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Deterministic staged-change checks. AI review belongs at push or PR scope.
+
+set -uo pipefail
+
+[ "${SKIP_PRE_COMMIT_CHECKS:-0}" = "1" ] && exit 0
+
+repo_root="$(git rev-parse --show-toplevel)"
+exec "$repo_root/.review-hooks/scripts/check-staged-change.sh"

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Configurable deterministic checks followed by one bounded aggregate AI review.
+
+set -uo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+exec "$repo_root/.review-hooks/scripts/run-pre-push-gate.sh"

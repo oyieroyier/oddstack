@@ -1,0 +1,4 @@
+interface:
+  display_name: "Set Up Collaboration Hooks"
+  short_description: "Install bounded review hooks safely"
+  default_prompt: "Use $setup-collaboration-hooks to inspect the current Git hook configuration, adapt the generic review-hooks profile, install without replacing existing hooks, and verify the result."
