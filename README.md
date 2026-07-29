@@ -1,11 +1,12 @@
 # Codex Claude Skills
 
-This bundle contains four project-local Claude Code skills:
+This bundle contains five project-local collaboration skills:
 
 - `codex-implementation` — delegates implementation and investigation work to Codex CLI with self-contained prompts.
 - `codex-review` — performs adversarial, read-only reviews of diffs, plans, branches, commits, and Codex-generated patches.
 - `codex-computer-use` — prepares scoped GUI/browser/screenshot/desktop-app QA tasks for Codex Computer Use, Browser use, Chrome, image inputs, or safe local browser automation.
 - `ui-nitpicker` — a ruthlessly exacting design-engineer persona (Apple/Airbnb/Stripe pedigree) for UI reviews, design-spec enforcement, journey/flow critique, and plan-first frontend implementation. Willing to radically restructure layouts and paradigms; blocks on design-spec deviations and frontend anti-patterns.
+- `delegate-frontend-to-claude` — lets Codex hand a bounded frontend slice to Claude Code and resume the work through a durable, bidirectional backlog.
 
 ## Directory layout
 
@@ -35,6 +36,16 @@ This bundle contains four project-local Claude Code skills:
       intuition-and-flow.md
       frontend-standards.md
       plan-template.md
+.agents/skills/
+  delegate-frontend-to-claude/
+    SKILL.md
+    agents/
+      openai.yaml
+    references/
+      delegation-backlog-template.md
+      frontend-handoff-template.md
+    scripts/
+      run-claude-frontend.sh
 CLAUDE.md.codex-skills-snippet.md
 install.sh
 ```
@@ -50,8 +61,9 @@ From the extracted bundle directory:
 Or copy manually:
 
 ```bash
-mkdir -p /path/to/your/repo/.claude/skills
+mkdir -p /path/to/your/repo/.claude/skills /path/to/your/repo/.agents/skills
 cp -R .claude/skills/* /path/to/your/repo/.claude/skills/
+cp -R .agents/skills/* /path/to/your/repo/.agents/skills/
 ```
 
 Then copy the contents of `CLAUDE.md.codex-skills-snippet.md` into the repo's `CLAUDE.md` if you want the repository instructions to reference these skills explicitly.
@@ -59,8 +71,9 @@ Then copy the contents of `CLAUDE.md.codex-skills-snippet.md` into the repo's `C
 ## Install globally for your user
 
 ```bash
-mkdir -p ~/.claude/skills
+mkdir -p ~/.claude/skills ~/.agents/skills
 cp -R .claude/skills/* ~/.claude/skills/
+cp -R .agents/skills/* ~/.agents/skills/
 ```
 
 Project-local install is usually safer because the behavior is scoped to a repository and can be versioned with the project.
@@ -69,6 +82,7 @@ Project-local install is usually safer because the behavior is scoped to a repos
 
 ```bash
 find .claude/skills -maxdepth 2 -name SKILL.md -print
+find .agents/skills -maxdepth 2 -name SKILL.md -print
 ```
 
 Expected:
@@ -78,6 +92,7 @@ Expected:
 .claude/skills/codex-review/SKILL.md
 .claude/skills/codex-computer-use/SKILL.md
 .claude/skills/ui-nitpicker/SKILL.md
+.agents/skills/delegate-frontend-to-claude/SKILL.md
 ```
 
 Also verify that Codex is available:
@@ -108,6 +123,12 @@ Use codex-computer-use to prepare a scoped browser QA pass for the local checkou
 Use ui-nitpicker to review this dashboard screenshot against our design spec, then plan the redesign before touching code.
 ```
 
+Ask Codex:
+
+```text
+Use delegate-frontend-to-claude to implement the backend contract, delegate the bounded frontend slice to Claude, and verify the integrated result.
+```
+
 ## Notes
 
-These skills are prompt wrappers around the Codex CLI and Codex app/browser workflows. They do not install Codex, grant Codex permissions, or bypass Codex sandboxing. They are designed to make Claude's delegation prompts explicit, repeatable, and reviewable.
+These skills are prompt wrappers around the Codex and Claude Code CLIs and Codex app/browser workflows. They do not install either CLI, grant permissions, or bypass sandboxing. They are designed to make cross-model delegation prompts explicit, repeatable, resumable, and reviewable.

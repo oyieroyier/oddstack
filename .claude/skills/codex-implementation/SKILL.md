@@ -59,11 +59,14 @@ Run these checks before delegating:
 
 ```bash
 git status --short
+git diff --stat
+git diff --name-only
 pwd
-find . -maxdepth 3 \( -name CLAUDE.md -o -name AGENTS.md -o -name README.md \) -not -path '*/node_modules/*' | head -50
+rg --files -g 'CLAUDE.md' -g 'AGENTS.md' -g 'README.md' | sed -n '1,50p'
+rg -n "[task-specific symbol or term]" [likely paths]
 ```
 
-Read any project guidance that applies to the current directory. If the work touches package management, build tooling, migrations, deployment, authentication, authorization, payments, or data deletion, inspect the relevant docs and guardrails before asking Codex to edit.
+Use the diff and targeted search to bound the task before reading files. Read only the project guidance that applies to the current directory and touched domain. If the work touches package management, build tooling, migrations, deployment, authentication, authorization, payments, or data deletion, inspect the relevant docs and guardrails before asking Codex to edit.
 
 ### 2. Decide execution mode
 
@@ -114,16 +117,16 @@ The prompt must include:
 For longer or high-risk runs, capture Codex's final message and logs:
 
 ```bash
-mkdir -p .codex-runs
+run_dir="$(mktemp -d /tmp/codex-run.XXXXXX)"
 run_id="$(date +%Y%m%d-%H%M%S)"
-cat > .codex-runs/${run_id}.prompt.md <<'PROMPT'
+cat > "${run_dir}/${run_id}.prompt.md" <<'PROMPT'
 [write the self-contained implementation prompt here]
 PROMPT
-codex exec -s workspace-write --cd "$PWD" - < .codex-runs/${run_id}.prompt.md \
-  | tee .codex-runs/${run_id}.output.txt
+codex exec -s workspace-write --cd "$PWD" - < "${run_dir}/${run_id}.prompt.md" \
+  | tee "${run_dir}/${run_id}.output.txt"
 ```
 
-If the repository should not keep `.codex-runs/`, place the files under `/tmp` instead. Do not commit run logs unless the user asks and they contain no sensitive data.
+Use a repository-local `.codex-runs/` directory only when the user explicitly wants durable local logs and the path is ignored. Do not commit run logs unless the user asks and they contain no sensitive data.
 
 ### 5. Post-run inspection
 
@@ -132,11 +135,15 @@ Always inspect the result yourself:
 ```bash
 git status --short
 git diff --stat
+git diff --cached --stat
 git diff --check
+git diff --cached --check
+git ls-files --others --exclude-standard
 git diff -- . ':(exclude)package-lock.json' ':(exclude)yarn.lock' ':(exclude)pnpm-lock.yaml' | sed -n '1,240p'
+git diff --cached -- . ':(exclude)package-lock.json' ':(exclude)yarn.lock' ':(exclude)pnpm-lock.yaml' | sed -n '1,240p'
 ```
 
-Then inspect full diffs for every changed file. Pay special attention to:
+Then inspect full staged and unstaged diffs for every changed file, and open every untracked file with the appropriate safe reader. Pay special attention to:
 
 - Unrelated edits.
 - Broad rewrites when a narrow patch was requested.

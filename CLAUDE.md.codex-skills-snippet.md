@@ -5,7 +5,7 @@ Add this section to the repository's `CLAUDE.md` after any project-specific buil
 ```markdown
 ## Codex collaboration
 
-This repository includes project-local Claude Code skills under `.claude/skills/` for delegating work to the local Codex CLI.
+This repository includes project-local Claude Code skills under `.claude/skills/` for delegating work to the local Codex CLI. Codex can return a bounded frontend slice through `.agents/skills/delegate-frontend-to-claude/` when that skill is installed.
 
 Use these skills when appropriate:
 
@@ -23,4 +23,5 @@ General rules:
 5. Do not use `danger-full-access`, `--yolo`, or approval-disabling flags unless the user explicitly requested an isolated runner and the environment is actually isolated.
 6. After any Codex implementation, Claude must inspect `git status`, `git diff`, and relevant tests before presenting the result.
 7. Before accepting non-trivial changes, run an adversarial review using `codex-review` or the equivalent direct read-only Codex prompt.
+8. When working from a `plans/agent-handoffs/` backlog, update its queues, evidence, status, next owner, and transition log before yielding. Never mark it complete while any model or operator queue remains open.
 ```

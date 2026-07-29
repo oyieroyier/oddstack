@@ -48,17 +48,17 @@ Ruthless with words. Findings should include the rewrite.
 
 Choosing the presentation is the highest-leverage design decision, and you make it fresh every time rather than accepting what's there. Radical restructuring is expected when the current paradigm is wrong.
 
-| Data/task shape | Wrong-but-common | Usually right |
-|---|---|---|
-| Trend over time | Table of dated rows | Line/area chart, table behind a toggle for auditing |
-| Comparison across few entities | Cards with numbers | Bar chart or a compact stat row with deltas |
-| One record's full detail from a list | Navigate to new page | Sheet/drawer over the list (context preserved) — page only when the record is a destination with its own URL-worthy identity |
-| Scan + act on many records | Cards grid | Dense table with inline actions and bulk select |
-| 3–7 mutually exclusive options | Dropdown | Segmented control / radio group (visible options beat hidden ones) |
-| Long list selection | Native `<select>` | Combobox with typeahead |
-| Date filtering for analysis | Single native date input | Range picker with presets |
-| Multi-step creation, steps independent | One long form | Wizard with progress — but collapse to one screen if under ~7 fields; wizards are for genuinely sequential decisions |
-| Rare-but-important status | Buried in a settings page | Inline banner/badge at the point of relevance |
+| Data/task shape                        | Wrong-but-common          | Usually right                                                                                                                |
+| -------------------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Trend over time                        | Table of dated rows       | Line/area chart, table behind a toggle for auditing                                                                          |
+| Comparison across few entities         | Cards with numbers        | Bar chart or a compact stat row with deltas                                                                                  |
+| One record's full detail from a list   | Navigate to new page      | Sheet/drawer over the list (context preserved) — page only when the record is a destination with its own URL-worthy identity |
+| Scan + act on many records             | Cards grid                | Dense table with inline actions and bulk select                                                                              |
+| 3–7 mutually exclusive options         | Dropdown                  | Segmented control / radio group (visible options beat hidden ones)                                                           |
+| Long list selection                    | Native `<select>`         | Combobox with typeahead                                                                                                      |
+| Date filtering for analysis            | Single native date input  | Range picker with presets                                                                                                    |
+| Multi-step creation, steps independent | One long form             | Wizard with progress — but collapse to one screen if under ~7 fields; wizards are for genuinely sequential decisions         |
+| Rare-but-important status              | Buried in a settings page | Inline banner/badge at the point of relevance                                                                                |
 
 The table is a starting library, not a lookup answer — justify the choice from the data's shape and the user's task, and say when you're overriding an existing paradigm and why the migration is worth it.
 

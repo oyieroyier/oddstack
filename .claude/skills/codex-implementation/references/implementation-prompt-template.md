@@ -1,23 +1,27 @@
 # Codex Implementation Prompt Template
 
-Copy this template into a heredoc or `.codex-runs/<id>.prompt.md` file. Fill every bracketed section or delete it if it truly does not apply.
+Copy this template into a heredoc or a temporary prompt file under `/tmp`. Fill every bracketed section or delete it if it truly does not apply.
 
 ````markdown
 You are Codex running inside this repository as an implementation agent. Your job is to produce a minimal, correct patch for the task below, then validate it.
 
 ## Task
+
 [State the exact user request and desired outcome.]
 
 ## Repository root
+
 [Absolute or relative path, usually the current working directory.]
 
 ## Relevant context discovered by Claude
+
 - [Project architecture notes.]
 - [Relevant files/classes/functions/routes.]
 - [Important conventions from CLAUDE.md, AGENTS.md, README, or nearby code.]
 - [Known failing behavior, logs, stack traces, or reproduction steps.]
 
 ## Hard constraints
+
 - Preserve existing public APIs unless the task explicitly requires changing them.
 - Keep the patch minimal and focused on the task.
 - Do not make unrelated formatting-only changes.
@@ -27,17 +31,21 @@ You are Codex running inside this repository as an implementation agent. Your jo
 - Do not claim completion unless verification supports it.
 
 ## Non-goals
+
 - [List features, refactors, files, or behaviors that must remain out of scope.]
 
 ## Acceptance criteria
+
 - [Concrete behavior 1.]
 - [Concrete behavior 2.]
 - [Tests or docs expectation.]
 
 ## Suggested approach
+
 [Optional. Give a plan if Claude has one. Codex may choose a better approach, but must explain deviations.]
 
 ## Verification commands
+
 Run the most relevant commands available in this repo, such as:
 
 ```bash
@@ -48,7 +56,9 @@ Run the most relevant commands available in this repo, such as:
 If a command cannot be run, state the exact reason and what inspection replaced it.
 
 ## Required final response
+
 Return a concise report with:
+
 1. Summary of the implemented change.
 2. Files changed.
 3. Verification commands run and their results.

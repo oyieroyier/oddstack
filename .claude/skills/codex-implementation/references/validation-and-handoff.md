@@ -9,10 +9,13 @@ Run:
 ```bash
 git status --short
 git diff --stat
+git diff --cached --stat
 git diff --check
+git diff --cached --check
+git ls-files --others --exclude-standard
 ```
 
-Then inspect the full diff. Confirm:
+Then inspect the full staged and unstaged diffs and open every untracked file. Confirm:
 
 - The changed files match the requested scope.
 - No unrelated files, generated files, credentials, caches, or local-only configs were changed.
@@ -58,13 +61,16 @@ Use this format in your final message:
 Implemented via Codex, then reviewed by Claude.
 
 Changed:
+
 - `path/to/file`: [what changed]
 - `path/to/test`: [test coverage]
 
 Verified:
+
 - `command`: passed/failed/skipped with reason
 
 Notes:
+
 - [Remaining risk or limitation]
 ```
 

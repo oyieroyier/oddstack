@@ -35,6 +35,8 @@ Choose the safest capable path:
 5. Static screenshot or design image: use `codex exec --image` or attach the image in Codex, then ask for implementation or review.
 6. Production, account, billing, destructive, or credentialed actions: do not proceed unless the user has explicitly scoped a safe test environment and non-destructive actions.
 
+Do not infer Browser, Chrome, or Computer Use support from the Codex CLI. Check the installed CLI help and use those capabilities only when the current Claude/Codex App environment visibly provides them. Otherwise use repository-native browser automation or prepare a bounded prompt for the user to run in an equipped Codex App.
+
 ## Safety constraints
 
 - Never ask Codex to enter passwords, recovery codes, payment details, private keys, or secrets.
@@ -90,7 +92,7 @@ For edit runs, switch to `-s workspace-write` and include acceptance criteria.
 
 ### 4. Use Codex App Computer Use when true desktop control is needed
 
-If the task requires Codex App Computer Use rather than terminal-only execution, compose a prompt that the user or wrapper agent can send to Codex App. Use `@Computer`, `@Browser`, `@Chrome`, or the app name only when that capability is installed and allowed.
+If the task requires Codex App Computer Use rather than terminal-only execution, first confirm that the current environment exposes it. Then compose a prompt that the user or wrapper agent can send to Codex App. Use `@Computer`, `@Browser`, `@Chrome`, or the app name only when that capability is visibly installed and allowed. If it is unavailable, stop at prompt preparation or use structured local automation; do not claim that a computer-use run occurred.
 
 Prompt pattern:
 
@@ -98,17 +100,20 @@ Prompt pattern:
 @Computer Use [exact app/window/browser] to [exact task].
 
 Scope:
+
 - Environment: [local/staging/test account only]
 - Allowed actions: [click/read/type only where needed]
 - Prohibited actions: do not submit purchases, delete data, change account security, invite users, deploy, or enter secrets.
 - Stop and ask/report if you hit login, payment, production data, destructive prompts, or unknown permission dialogs.
 
 Flow to test:
+
 1. [step]
 2. [step]
 3. [step]
 
 Evidence required:
+
 - Repro steps.
 - Expected vs actual result.
 - Screenshot or appshot names if captured.
@@ -134,23 +139,29 @@ Require structured output:
 
 ```markdown
 ## Result
+
 fixed | reproduced-only | not-reproduced | blocked
 
 ## UI flow performed
+
 - [steps actually taken]
 
 ## Evidence
+
 - Screenshot/appshot/log paths: [paths]
 - Console/network errors: [summary]
 - Expected vs actual: [summary]
 
 ## Changes
+
 - `path`: [what changed]
 
 ## Validation
+
 - [commands or repeated UI flow]
 
 ## Blockers / risks
+
 - [permissions, login, flakiness, coverage gaps]
 ```
 

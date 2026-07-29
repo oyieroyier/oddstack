@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Delegate Frontend to Claude'
+  short_description: 'Resume Codex-Claude frontend handoffs'
+  default_prompt: 'Use $delegate-frontend-to-claude to record both model queues in a durable backlog, implement the backend, delegate the frontend to Claude, and verify the integrated result.'

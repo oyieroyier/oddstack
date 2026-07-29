@@ -56,17 +56,20 @@ If the user did not specify, default to uncommitted working tree when changes ex
 
 ```bash
 git status --short
+git diff --stat
+git diff --name-only
 git branch --show-current
 git remote -v | sed -n '1,4p'
+rg -n "[review-target symbol or term]" [likely paths]
 ```
 
 Identify applicable project guidance:
 
 ```bash
-find . -maxdepth 3 \( -name CLAUDE.md -o -name AGENTS.md -o -name README.md \) -not -path '*/node_modules/*' | head -50
+rg --files -g 'CLAUDE.md' -g 'AGENTS.md' -g 'README.md' | sed -n '1,50p'
 ```
 
-Read relevant guidance before composing the review prompt.
+Use the diff and targeted search to bound the review. Read only the guidance relevant to the touched paths and domain before composing the review prompt.
 
 ### 2. Prefer verified command syntax
 
@@ -95,6 +98,12 @@ If reviewing uncommitted changes, include this instruction in the prompt:
 Review the current working tree, including staged, unstaged, and untracked files. Use git commands to inspect the diff and relevant surrounding code. Do not modify files.
 ```
 
+If reviewing staged changes only, use the read-only exec fallback rather than `codex review --uncommitted`, and include:
+
+```markdown
+Review only the staged changes shown by `git diff --cached`. Exclude unstaged and untracked changes from the review target, though you may inspect unchanged surrounding code for context. Do not modify files.
+```
+
 If reviewing a branch, include:
 
 ```markdown
@@ -107,10 +116,13 @@ Codex must return findings in this format:
 
 ```markdown
 ## Verdict
+
 BLOCK | CAUTION | PASS
 
 ## Findings
+
 ### P0/P1/P2/P3: [short title]
+
 - Evidence: `path:line` or command/diff reference
 - Failure mode: [what breaks, leaks, corrupts, regresses, or becomes ambiguous]
 - Trigger/reproduction: [specific input, state, request, race, migration path, browser size, etc.]
@@ -118,9 +130,11 @@ BLOCK | CAUTION | PASS
 - Recommended fix: [minimal fix direction]
 
 ## Checks performed
+
 - [commands, files, call sites, tests, schemas, docs inspected]
 
 ## Coverage gaps
+
 - [what was not reviewed and why]
 ```
 

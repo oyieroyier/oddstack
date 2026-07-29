@@ -18,7 +18,7 @@ A single file holding a page's layout, data fetching, five handlers, three inlin
 `useEffect` is for synchronizing with **external systems** (DOM APIs, subscriptions, analytics, non-React widgets). Nearly every other use is a bug factory. Block on:
 
 - **Derived state in effects**: `useEffect(() => setFullName(first + last))` → compute during render, or `useMemo` if expensive. No state, no effect.
-- **Data fetching in effects**: raw `fetch` + `useState` + `useEffect` + hand-rolled loading flags → server components / route loaders for initial data, TanStack Query (or SWR) for client cache with revalidation, mutations via Server Actions or `useMutation`. Hand-rolled fetch effects lose you dedup, races, retries, cache, and cancellation in one move.
+- **Data fetching in effects**: raw `fetch` + `useState` + `useEffect` + hand-rolled loading flags → TanStack Start route loaders for initial data and TanStack Query for client cache with revalidation; use the repository's typed mutation patterns for writes. Hand-rolled fetch effects lose you dedup, races, retries, cache, and cancellation in one move.
 - **Event logic in effects**: reacting to a state flag set by a handler (`useEffect(() => { if (submitted) ... })`) → put the logic in the handler.
 - **State-to-state chains**: effect sets state, which triggers another effect, which sets more state → model the state properly (usually a reducer or derived values); chains are unreadable and render-storm.
 - **Prop-mirroring**: `useState(props.value)` + effect to re-sync → use the prop directly, or fully control the component. Mirrored state is two sources of truth, one of them stale.
@@ -28,15 +28,15 @@ A single file holding a page's layout, data fetching, five handlers, three inlin
 Six `useState` calls that change together are one state object nobody modeled. Block on:
 
 - Booleans multiplying (`isLoading`, `isError`, `isSuccess`, `isIdle`) → one discriminated status union, or better, the state machine your data library already gives you.
-- Form fields as individual `useState` → React Hook Form (or the framework's form primitive) + Zod schema. Uncontrolled by default, validation typed, re-renders scoped.
+- Form fields as individual `useState` → the repository's TanStack Form patterns plus the shared validation schema. Validation stays typed and field updates stay scoped.
 - Server data in `useState` → it belongs in the query cache / loader, where staleness and revalidation are handled.
 - State that can be computed from other state or props → compute it. **The best state is state that doesn't exist.**
-- UI state that should survive refresh and be shareable (filters, tabs, pagination, open sheet + selected id) → **URL state**, via nuqs or the router's search params. If a colleague can't paste a link to reproduce the view, the state is in the wrong place.
+- UI state that should survive refresh and be shareable (filters, tabs, pagination, open sheet + selected id) → **URL state**, via TanStack Router search parameters. If a colleague can't paste a link to reproduce the view, the state is in the wrong place.
 
 ### Other blockers
 
 - Prop drilling 4+ levels for cross-cutting data → composition first (pass components, not data), then context for genuinely global read-mostly values, then a store (Zustand/Jotai) for shared client state with frequent writes.
-- Client-rendering entire pages whose content is server-derivable → server components / streaming SSR; ship interaction, not JSON-piping-into-DOM.
+- Client-fetching entire pages whose initial content is loader-derivable → TanStack Start route loaders and streaming SSR; ship interaction, not JSON-piping-into-DOM.
 - Unkeyed or index-keyed dynamic lists that reorder.
 - Accessibility violations in interactive primitives: divs-as-buttons, no focus management in overlays, icon buttons with no accessible name. Use Radix/shadcn primitives — a11y is why they exist.
 - Hardcoded values the design system tokenizes: hex colors, px spacing, font sizes inline where tokens exist. This doubles as a design-spec violation.
@@ -46,10 +46,10 @@ Six `useState` calls that change together are one state object nobody modeled. B
 Where does a piece of state live? First rung that fits, stop there:
 
 1. **Nowhere** — derivable from existing state/props? Derive it.
-2. **The URL** — filters, tabs, selection, pagination, modals-with-identity. (nuqs / router search params.)
+2. **The URL** — filters, tabs, selection, pagination, modals-with-identity. (TanStack Router search parameters.)
 3. **Local `useState`/`useReducer`** — genuinely local, ephemeral UI state (open/closed, hover, draft input).
 4. **The form library** — anything a form touches.
-5. **The server cache** — anything fetched. TanStack Query / RSC / loaders own it; components subscribe.
+5. **The server cache** — anything fetched. TanStack Query and route loaders own it; components subscribe.
 6. **A small store (Zustand/Jotai)** — client state shared across distant components with frequent writes.
 7. **Context** — read-mostly DI (theme, locale, current user), not a state manager; every consumer re-renders on change.
 
@@ -57,13 +57,13 @@ Where does a piece of state live? First rung that fits, stop there:
 
 ## 2026 baseline the nitpicker expects
 
-- **React 19+ semantics**: Actions and `useActionState` for mutations, `useOptimistic` for latency-hiding, `use()` for promises/context, refs as props (no `forwardRef` ceremony), `<form action>` over onSubmit-preventDefault chains.
+- **React 19+ semantics** where they fit the existing TanStack Start architecture: `useOptimistic` for latency-hiding, `use()` for promises/context, and refs as props. Repository-native form and mutation patterns remain authoritative.
 - **React Compiler** (or equivalent) for memoization — hand-scattered `useMemo`/`useCallback`/`memo` everywhere is noise; hand-tuned memoization only where a profiler pointed.
-- **Server-first data**: RSC / route loaders for reads, server actions or typed mutations for writes, client cache (TanStack Query v5) only where interactivity demands it.
+- **Server-first data**: TanStack Start route loaders for initial reads, typed mutations for writes, and TanStack Query v5 where client interactivity demands a cache.
 - **Styling**: design tokens as the single source (Tailwind v4 theme / CSS variables); modern CSS natively — container queries, `:has()`, subgrid, View Transitions for route/element morphs; no JS for what CSS does.
 - **Components**: shadcn/ui + Radix (or the project's equivalent) as the primitive layer; `cva`/variants over ad-hoc conditional class strings.
 - **Motion**: Motion (Framer) or View Transitions API; CSS transitions for micro-interactions; everything honors `prefers-reduced-motion`.
-- **Forms**: React Hook Form + Zod (schema shared with the server action — one validation source of truth).
+- **Forms**: TanStack Form plus the repository's shared validation schema so client and server keep one validation source of truth.
 - **Tables/lists**: TanStack Table for real data grids; virtualization (TanStack Virtual) past ~100 rendered rows.
 - **TypeScript strict**, no `any` escapes in component contracts; discriminated unions for UI state.
 
@@ -73,7 +73,7 @@ Where does a piece of state live? First rung that fits, stop there:
 - Interactions must respond < 100ms — optimistic updates on mutations the user can see; never spinner-block the whole screen for one widget's request (that's what Suspense boundaries scope).
 - Code-split at route and heavy-widget level (charts, editors); a dashboard shouldn't ship the settings page's editor.
 - Images: proper sizing, modern formats, lazy below the fold — via the framework's image primitive, not hand-rolled.
-- Waterfalls are architecture bugs: parallelize independent fetches at the loader/RSC layer; a page that fetches serially in three nested components needed its data hoisted.
+- Waterfalls are architecture bugs: parallelize independent fetches in the route loader; a page that fetches serially in three nested components needed its data hoisted.
 
 ## Review protocol for code
 

@@ -6,21 +6,27 @@ Severity communicates ship risk to the product's quality bar, not personal prefe
 
 ```markdown
 ## Verdict
+
 BLOCK | POLISH | SHIP
 
 ## Paradigm check
+
 [Is this the right presentation at all? If not, the redesign comes first and everything below is secondary.]
 
 ## Findings
+
 ### D0/D1/D2/D3: [short title]
+
 - Evidence: screenshot region, `path:line`, or component name
 - Fails because: [which principle or spec rule it violates]
 - Fix: [concrete change — exact spacing/token/component/copy, or a sketched redesign if structural]
 
 ## Anticipated flows
+
 - [next-actions the current design fails to serve, with the suggested flow]
 
 ## Copy edits
+
 - ["current text" → "rewritten text"]
 ```
 
