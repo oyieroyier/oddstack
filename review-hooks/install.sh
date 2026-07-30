@@ -152,13 +152,16 @@ fi
 profile_ai_enabled="$(
   bash -c '. "$1"; printf "%s" "${AI_REVIEW_ENABLED:-0}"' _ "$profile_src"
 )"
+if ! command -v sha256sum >/dev/null 2>&1; then
+  echo "[review-hooks] install requires sha256sum" >&2
+  exit 2
+fi
+
 if [ "$profile_ai_enabled" = "1" ]; then
-  for required_command in timeout sha256sum; do
-    if ! command -v "$required_command" >/dev/null 2>&1; then
-      echo "[review-hooks] AI review requires: $required_command" >&2
-      exit 2
-    fi
-  done
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "[review-hooks] AI review requires python3" >&2
+    exit 2
+  fi
   if ! command -v claude >/dev/null 2>&1; then
     echo "[review-hooks] warning: Claude CLI is not currently available" >&2
   fi
@@ -196,15 +199,35 @@ if [ "$dry_run" = "1" ]; then
   exit 0
 fi
 
-mkdir -p "$runtime_dir/scripts" "$hooks_dir"
+mkdir -p "$runtime_dir/scripts" "$runtime_dir/review_gate" "$runtime_dir/bin" "$hooks_dir"
 cp "$bundle_root/scripts/"*.sh "$runtime_dir/scripts/"
+cp "$bundle_root/review_gate/"*.py "$runtime_dir/review_gate/"
+cp "$bundle_root/bin/review-gate" "$runtime_dir/bin/review-gate"
 cp "$bundle_root/hooks/pre-commit" "$bundle_root/hooks/pre-push" "$hooks_dir/"
 cp "$bundle_root/README.md" "$runtime_dir/README.md"
+cp "$bundle_root/VERSION" "$runtime_dir/VERSION"
 cp "$profile_src" "$profile_dst"
 chmod +x \
   "$runtime_dir/scripts/"*.sh \
+  "$runtime_dir/bin/review-gate" \
   "$hooks_dir/pre-commit" \
   "$hooks_dir/pre-push"
+
+# Stamp the installed runtime with its bundle version and source digest so
+# doctor.sh can detect an installation from an older bundle.
+bundle_digest="$(
+  cd "$bundle_root" &&
+    find scripts hooks bin review_gate VERSION README.md \
+      -type f -not -path '*__pycache__*' |
+    LC_ALL=C sort |
+    xargs sha256sum |
+    sha256sum |
+    awk '{print $1}'
+)"
+{
+  printf 'version: %s\n' "$(cat "$bundle_root/VERSION")"
+  printf 'source-digest: %s\n' "$bundle_digest"
+} > "$runtime_dir/bundle-version"
 
 if [ "$activate" = "1" ]; then
   if [ "$current_hooks_path" != "$installed_hooks_path" ]; then

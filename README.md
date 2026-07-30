@@ -57,10 +57,11 @@ points to this file; it never replaces it.
 - Git repository with project instructions available to both agents.
 - Claude Code CLI installed and authenticated for Claude-owned work.
 - Codex CLI installed and authenticated for Codex-owned work.
-- Bash 4 or newer for the installers, hook scripts, and bundled Claude runner.
-- Git and standard Unix tools (`rg`, `sed`, `awk`, `grep`, and `find`); AI pre-push review
-  additionally requires `timeout` and `sha256sum`.
-- Python 3 for peer preference parsing, session handling, alert configuration, and release archives.
+- Bash 4 or newer for the installers and hook adapters.
+- Git and standard Unix tools (`rg`, `sed`, `awk`, `grep`, and `find`); install additionally
+  requires `sha256sum`.
+- Python 3 for the `review_gate` review runtime, peer preference parsing, session handling,
+  alert configuration, and release archives.
 - Node and pnpm only when the target repository's configured checks use them.
 
 Verify the CLIs:

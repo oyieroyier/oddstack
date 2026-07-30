@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Thin adapter over the review_gate module. Loads the repository profile,
+# then hands every decision to Python.
+
+set -uo pipefail
+
+bin_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+runtime_root="$(dirname "$bin_root")"
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
+  echo "[review-gate] not a Git repository: $PWD" >&2
+  exit 2
+}
+
+# shellcheck source=../scripts/load-profile.sh
+. "$runtime_root/scripts/load-profile.sh"
+load_review_hooks_profile "$repo_root" || exit $?
+
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "[review-gate] python3 is required for the review runtime" >&2
+  exit 2
+fi
+
+# Run the entry script by absolute path, never `-m` from the repository:
+# with `-m`, the reviewed repository's own directory leads sys.path and a
+# committed review_gate/ package could shadow the runtime. PYTHONSAFEPATH
+# adds the same protection on Python 3.11+.
+PYTHONPATH="$runtime_root" PYTHONSAFEPATH=1 \
+  exec python3 -B "$runtime_root/review_gate/run.py" --repo "$repo_root" "$@"

@@ -156,9 +156,10 @@ def active_capabilities(repo: pathlib.Path) -> list[Capability]:
         Capability("python3", "configuration, packaging, and dependency checks", "required"),
         Capability("rg", "fast repository-aware skill searches", "required"),
         Capability("sed", "bounded source and diff inspection", "required"),
-        Capability("awk", "review-gate parsing", "required"),
+        Capability("awk", "install and doctor digest reporting", "required"),
         Capability("grep", "hook and policy checks", "required"),
         Capability("find", "skill and policy discovery", "required"),
+        Capability("sha256sum", "install stamping and doctor drift checks", "required"),
         Capability(
             "claude",
             "Claude delegation, review, and peer deliberation",
@@ -170,18 +171,6 @@ def active_capabilities(repo: pathlib.Path) -> list[Capability]:
             "Codex implementation, review, and peer deliberation",
             "manual",
             installable=False,
-        ),
-        Capability(
-            "timeout",
-            "bounded AI pre-push review",
-            "conditional",
-            active=ai_review,
-        ),
-        Capability(
-            "sha256sum",
-            "AI-review result caching",
-            "conditional",
-            active=ai_review,
         ),
         Capability(
             "node",

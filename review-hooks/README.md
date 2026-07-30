@@ -4,14 +4,19 @@ This optional module provides two Git hook adapters backed by one versioned prof
 
 ```text
 pre-commit → deterministic staged-change checks
-pre-push   → configurable commands → bounded aggregate AI review
+pre-push   → configurable commands → verify one cached review decision
 ```
+
+The hooks are thin adapters. Every review decision lives in the `review_gate` Python module
+behind one executable, `.review-hooks/bin/review-gate`. It owns target resolution, policy
+validation, prompt construction, process supervision, result parsing, evidence, caching, and
+acknowledgements.
 
 Installing the skills does not activate these hooks. Activation requires a separate, explicit
 `review-hooks/install.sh` invocation.
 
-The implementation requires Bash 4 or newer. AI review also requires `timeout` and `sha256sum`;
-these are common on GNU/Linux but may need GNU coreutils on other platforms.
+The implementation requires Bash 4 or newer and, for AI review, Python 3 and `sha256sum`; these
+are common on GNU/Linux but may need installation on other platforms.
 
 ## Install
 
@@ -75,7 +80,7 @@ executable code.
 Required version:
 
 ```bash
-REVIEW_HOOKS_PROFILE_VERSION=1
+REVIEW_HOOKS_PROFILE_VERSION=2
 ```
 
 Deterministic controls:
@@ -91,7 +96,7 @@ commands receive `REVIEW_HOOKS_STAGED_FILES_FILE`, a temporary newline-delimited
 paths. Pre-push commands receive `REVIEW_HOOKS_PUSH_UPDATES_FILE`, which contains Git's pre-push
 standard-input records.
 
-AI-review controls:
+AI-review controls (version 2):
 
 ```bash
 AI_REVIEW_ENABLED=0
@@ -100,17 +105,42 @@ AI_REVIEW_DEFAULT_BASE='origin/main'
 AI_REVIEW_BACKEND_PATH_REGEX='^(api/|backend/|server/|db/|migrations/|sql/)'
 AI_REVIEW_SENSITIVE_PATH_REGEX='...'
 AI_REVIEW_SENSITIVE_PATH_ALLOW_REGEX='\.example$'
-AI_REVIEW_TIMEOUT=600
-AI_REVIEW_MAX_ATTEMPTS=2
+AI_REVIEW_PUSH_MODE=verify
+AI_REVIEW_TOTAL_TIMEOUT=600
+AI_REVIEW_KILL_GRACE=5
+AI_REVIEW_MAX_ATTEMPTS=1
+AI_REVIEW_RETRYABLE_FAILURES=''
+AI_REVIEW_MIN_RETRY_TIME=30
 AI_REVIEW_MAX_DIFF_LINES=3000
 AI_REVIEW_MAX_BACKEND_DIFF_LINES=1200
 AI_REVIEW_MAX_PROMPT_TOKENS=32000
+AI_REVIEW_MAX_PRIOR_REPORT_BYTES=12000
 AI_REVIEW_MAX_OUTPUT_BYTES=30000
 AI_REVIEW_MAX_BUDGET_USD=2.00
+AI_REVIEW_MODEL='claude-sonnet-5'
+AI_REVIEW_ROLLING_SPEND_LIMIT_USD=10.00
+AI_REVIEW_ROLLING_SPEND_WINDOW_HOURS=24
 ```
+
+`AI_REVIEW_TOTAL_TIMEOUT` covers the whole run: prompt creation, every attempt, parsing, and
+cleanup. `AI_REVIEW_MAX_BUDGET_USD` is also run-wide; attempt caps sum to it. `AI_REVIEW_MODEL`
+is required before a paid attempt starts — a run never inherits the operator's interactive CLI
+default. The rolling limit bounds paid spend across runs inside the window; set `0` to disable.
 
 The generic profile keeps AI review disabled. Enable it only after adapting repository naming, path
 classification, sensitive-path rules, budgets, and credential ownership.
+
+### Migrating from version 1
+
+Version 1 profiles still load for one release, with a warning. Two meanings changed:
+
+- `AI_REVIEW_TIMEOUT` applied to each attempt; it now maps to the run-wide deadline.
+- The runner retried every non-zero exit; now only failures listed in
+  `AI_REVIEW_RETRYABLE_FAILURES` retry (`startup_transport`, matched against
+  `AI_REVIEW_STARTUP_EXIT_CODES`), and never after a timeout, output flood, or invalid result.
+
+`scripts/run-ai-review-gate.sh` remains as a forwarding compatibility adapter. Move to a version
+2 profile and call `bin/review-gate` directly; `doctor.sh --strict` fails on version 1.
 
 `profiles/lmm.example.conf` is a reference adapter for Sokko/Lipa Mdogo Mdogo. It is intentionally
 not a portable default.
@@ -132,43 +162,71 @@ Approval is evidence that a person physically inspected the rendered page. Autom
 erase the meaning of the release gate. Production deployment should enforce the repository's
 blocking page-audit mode separately.
 
-## AI-review behavior
+## Review workflow
 
-When enabled, the pre-push gate:
+Run the paid review before pushing, while no remote connection is open:
+
+```bash
+AI_REVIEW_ALLOW_PERSONAL_QUOTA=1 .review-hooks/bin/review-gate review
+```
+
+Pass the opt-in per invocation, as above. Do not export it from a shell profile: an exported
+value authorizes every later paid run in that shell. The rolling spend ledger bounds the damage
+of a standing opt-in; it does not remove it.
+
+`review` resolves one exact base/tree pair (upstream by default; `--base`/`--head` to pin it),
+runs the bounded review, writes evidence, and caches the decision. The pre-push hook then runs
+`review-gate check-push` in `verify` mode: it accepts only a matching completed decision and
+never starts a reviewer while `git push` holds a connection. A network retry of the push can
+never buy a second review.
+
+CI that owns credentials and budget may set `AI_REVIEW_PUSH_MODE=run-if-missing` with
+`AI_REVIEW_CREDENTIAL_SCOPE=ci` to run a missing review inside the gate.
+
+When enabled, the gate:
 
 - reviews one pushed branch at a time;
 - reviews the aggregate remote-to-local diff rather than every commit;
 - separates backend-owner paths from the general scope;
 - refuses configured sensitive paths;
-- bounds attempts, time, input, output, and spend;
-- refuses implicit use of personal model quota;
-- caches results by base commit and tree;
-- carries a previous report into an incremental follow-up;
-- records explicit human acknowledgements;
-- reports infrastructure failures as `INCONCLUSIVE`.
+- runs the reviewer in its own process group and reaps the whole group on every exit path;
+- bounds the run with one deadline and one spend cap, plus a rolling cross-run spend ledger;
+- refuses implicit use of personal model quota and unnamed reviewer models;
+- caches decisions by base, tree, policy hash, prompt version, and reviewer identity;
+- carries structured open findings into an incremental follow-up, size-capped;
+- writes `ai-reviews/runs/<run-id>/` evidence for every decision, including `INCONCLUSIVE`;
+- exits 0 (accepted), 1 (blocking findings), or 2 (no trustworthy decision).
 
-Local personal quota requires a one-invocation opt-in:
+### Acknowledging a blocking review
+
+A blocking decision is overridden only by an acknowledgement bound to the exact report, base,
+tree, risk class, and policy:
 
 ```bash
-AI_REVIEW_ALLOW_PERSONAL_QUOTA=1 git push
+.review-hooks/bin/review-gate acknowledge \
+  --report ai-reviews/runs/<run-id>/report.md \
+  --reason "TICKET-123"
 ```
 
-CI should set:
+The gate prints this command with the exact report path when it blocks. A free-text environment
+variable no longer overrides blocking findings; an exported variable cannot silently disable the
+gate.
+
+### Skipping a review
+
+Skipping binds to the exact pushed commit, so a stale exported value cannot skip the next push:
 
 ```bash
-AI_REVIEW_CREDENTIAL_SCOPE=ci
-```
-
-Skipping review requires a recorded reason:
-
-```bash
-SKIP_AI_REVIEW=1 \
+SKIP_AI_REVIEW=<first 12+ characters of the pushed commit sha> \
 AI_REVIEW_HUMAN_ACK="<ticket or reason>" \
 git push
 ```
 
-Review reports and cache state are written to `ai-reviews/`. Add that directory to the target
-repository's ignore rules unless the repository deliberately versions review evidence.
+The skip writes its own evidence run.
+
+Review reports, evidence, cache, and the spend ledger are written to `ai-reviews/`. Add that
+directory to the target repository's ignore rules unless the repository deliberately versions
+review evidence.
 
 ## Deactivate
 
@@ -187,5 +245,7 @@ so their removal can be reviewed and committed normally.
 bash -n review-hooks/install.sh
 bash -n review-hooks/hooks/*
 bash -n review-hooks/scripts/*.sh
+bash -n review-hooks/bin/review-gate
 review-hooks/tests/run.sh
+python3 -m unittest discover -s review-hooks/tests -p 'test_*.py'
 ```

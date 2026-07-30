@@ -22,4 +22,4 @@ if [ "$AI_REVIEW_ENABLED" != "1" ]; then
   exit 0
 fi
 
-"$script_root/run-ai-review-gate.sh" < "$push_updates"
+"$script_root/../bin/review-gate" check-push --updates-file "$push_updates"

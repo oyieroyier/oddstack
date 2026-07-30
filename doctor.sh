@@ -124,7 +124,7 @@ check_tree() {
 
   if [ ! -e "$dst" ]; then
     warn "$label is not installed"
-  elif diff -qr "$src" "$dst" >/dev/null; then
+  elif diff -qr -x '__pycache__' -x '*.pyc' "$src" "$dst" >/dev/null; then
     pass "$label matches the bundle"
   else
     warn "$label has local drift; inspect with: diff -ru \"$dst\" \"$src\""
@@ -144,6 +144,53 @@ for skill_src in "$bundle_root"/.agents/skills/*; do
 done
 
 check_tree "$bundle_root/review-hooks" "$repo_root/review-hooks" "review-hooks"
+
+if [ -d "$repo_root/.review-hooks" ] && [ "$repo_root" != "$bundle_root" ]; then
+  for runtime_part in scripts review_gate bin; do
+    check_tree \
+      "$bundle_root/review-hooks/$runtime_part" \
+      "$repo_root/.review-hooks/$runtime_part" \
+      ".review-hooks/$runtime_part"
+  done
+
+  if [ -d "$repo_root/.collaboration-hooks" ]; then
+    check_tree \
+      "$bundle_root/review-hooks/hooks" \
+      "$repo_root/.collaboration-hooks" \
+      ".collaboration-hooks"
+  fi
+
+  if [ -f "$repo_root/.review-hooks/VERSION" ]; then
+    if cmp -s "$bundle_root/review-hooks/VERSION" "$repo_root/.review-hooks/VERSION"; then
+      pass "installed runtime VERSION matches the bundle"
+    else
+      warn "installed runtime VERSION differs from the bundle"
+    fi
+  else
+    warn ".review-hooks/VERSION is missing; the runtime predates version 2"
+  fi
+
+  stamp_file="$repo_root/.review-hooks/bundle-version"
+  if [ -f "$stamp_file" ] && command -v sha256sum >/dev/null 2>&1; then
+    installed_digest="$(sed -nE 's/^source-digest: (.*)$/\1/p' "$stamp_file")"
+    bundle_digest="$(
+      cd "$bundle_root/review-hooks" &&
+        find scripts hooks bin review_gate VERSION README.md \
+          -type f -not -path '*__pycache__*' |
+        LC_ALL=C sort |
+        xargs sha256sum |
+        sha256sum |
+        awk '{print $1}'
+    )"
+    if [ "$installed_digest" = "$bundle_digest" ]; then
+      pass "installed review runtime matches this bundle release"
+    else
+      warn "installed review runtime came from another bundle release; rerun review-hooks/install.sh --force"
+    fi
+  else
+    warn ".review-hooks/bundle-version stamp is missing; the runtime predates version 2"
+  fi
+fi
 
 hooks_path="$(git -C "$repo_root" config --local --get core.hooksPath || true)"
 case "$hooks_path" in
@@ -177,6 +224,28 @@ if [ -f "$profile_path" ]; then
     warn "AI pre-push review is enabled; confirm credential ownership and quota policy"
   else
     pass "AI pre-push review is not enabled"
+  fi
+
+  profile_version="$(
+    sed -nE 's/^[[:space:]]*REVIEW_HOOKS_PROFILE_VERSION=([0-9]+).*$/\1/p' \
+      "$profile_path" | tail -n 1
+  )"
+  case "$profile_version" in
+    2)
+      pass "review profile is version 2"
+      ;;
+    1)
+      warn "review profile is version 1; its timeout and retry meanings are deprecated — migrate to version 2"
+      ;;
+    *)
+      warn "review profile declares no known version"
+      ;;
+  esac
+
+  if command -v python3 >/dev/null 2>&1; then
+    pass "python3 is available for the review runtime"
+  else
+    warn "python3 is missing; the version 2 review runtime cannot run"
   fi
 else
   warn ".review-hooks.conf is not installed"
@@ -221,7 +290,9 @@ if [ -d "$repo_root/docs/implementation" ] &&
   pass "manual page-audit documentation is present"
   if grep -R -- '--approve' \
     "$repo_root/review-hooks/profiles" \
-    "$repo_root/review-hooks/scripts" >/dev/null 2>&1; then
+    "$repo_root/review-hooks/scripts" \
+    "$repo_root/review-hooks/review_gate" \
+    "$repo_root/review-hooks/bin" >/dev/null 2>&1; then
     fail "review-hook automation contains a page-approval command"
   else
     pass "review-hook automation does not approve pages"

@@ -40,6 +40,7 @@ mkdir -p "$expected_root"
 cp -R \
   "$bundle_root/.agents" \
   "$bundle_root/.claude" \
+  "$bundle_root/docs" \
   "$bundle_root/review-hooks" \
   "$bundle_root/scripts" \
   "$bundle_root/tests" \
@@ -54,6 +55,9 @@ cp \
   "$bundle_root/package.sh" \
   "$bundle_root/preferences.example.json" \
   "$expected_root/"
+
+# Local Python runs may leave bytecode caches; they never belong in a release.
+find "$expected_root" \( -name __pycache__ -o -name '*.pyc' \) -exec rm -rf {} +
 
 tar_path="$bundle_root/codex-claude-skills.tar.gz"
 zip_path="$bundle_root/codex-claude-skills.zip"

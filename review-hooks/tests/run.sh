@@ -61,6 +61,9 @@ test_install_and_deactivate() {
     [ "$(git -C "$repo" config --local --get core.hooksPath)" = ".collaboration-hooks" ] &&
     [ -x "$repo/.collaboration-hooks/pre-commit" ] &&
     [ -x "$repo/.review-hooks/scripts/run-ai-review-gate.sh" ] &&
+    [ -x "$repo/.review-hooks/bin/review-gate" ] &&
+    [ -f "$repo/.review-hooks/review_gate/core.py" ] &&
+    [ -f "$repo/.review-hooks/bundle-version" ] &&
     "$module_root/install.sh" --repo "$repo" --deactivate >/dev/null &&
     [ -z "$(git -C "$repo" config --local --get core.hooksPath || true)" ]; then
     pass "install activates and deactivate restores an unset hook path"
@@ -162,14 +165,17 @@ test_ai_review_and_sensitive_refusal() {
   cat > "$fake_claude" <<'EOF'
 #!/usr/bin/env bash
 cat >/dev/null
-printf '%s\n' \
-  "No findings." \
-  "VERDICT: SAFE" \
-  "BLOCKERS: no" \
-  "RISK-CLASS: none"
+echo "No findings."
+echo "REVIEW-RESULT-BEGIN"
+echo '{"schema_version": 1, "verdict": "SAFE", "risk_class": "none", "findings": [], "limitations": []}'
+echo "REVIEW-RESULT-END"
 EOF
   chmod +x "$fake_claude"
-  printf '%s\n' "AI_REVIEW_ENABLED=1" >> "$repo/.review-hooks.conf"
+  {
+    printf '%s\n' "AI_REVIEW_ENABLED=1"
+    printf '%s\n' "AI_REVIEW_PUSH_MODE=run-if-missing"
+    printf "AI_REVIEW_CLAUDE_BIN='%s'\n" "$fake_claude"
+  } >> "$repo/.review-hooks.conf"
 
   base="$(git -C "$repo" rev-parse HEAD)"
   printf '%s\n' "review me" >> "$repo/README.md"
@@ -179,7 +185,6 @@ EOF
 
   if printf 'refs/heads/main %s refs/heads/main %s\n' "$head" "$base" |
     AI_REVIEW_CREDENTIAL_SCOPE=ci \
-      AI_REVIEW_CLAUDE_BIN="$fake_claude" \
       bash -c "cd '$repo' && .review-hooks/scripts/run-pre-push-gate.sh" >/dev/null &&
     [ -s "$repo/ai-reviews/latest.md" ]; then
     pass "bounded AI review accepts a well-formed safe verdict"
@@ -195,7 +200,6 @@ EOF
 
   if printf 'refs/heads/main %s refs/heads/main %s\n' "$head" "$base" |
     AI_REVIEW_CREDENTIAL_SCOPE=ci \
-      AI_REVIEW_CLAUDE_BIN="$fake_claude" \
       bash -c "cd '$repo' && .review-hooks/scripts/run-pre-push-gate.sh" >/dev/null 2>&1; then
     fail "AI review refuses configured sensitive paths"
   else
@@ -210,7 +214,10 @@ test_personal_quota_and_multi_ref_refusal() {
   local status
   repo="$(new_repo refusal-modes)"
   install_generic "$repo"
-  printf '%s\n' "AI_REVIEW_ENABLED=1" >> "$repo/.review-hooks.conf"
+  {
+    printf '%s\n' "AI_REVIEW_ENABLED=1"
+    printf '%s\n' "AI_REVIEW_PUSH_MODE=run-if-missing"
+  } >> "$repo/.review-hooks.conf"
 
   base="$(git -C "$repo" rev-parse HEAD)"
   printf '%s\n' "review me" >> "$repo/README.md"
@@ -241,6 +248,87 @@ test_personal_quota_and_multi_ref_refusal() {
   fi
 }
 
+test_legacy_v1_profile_through_compat_adapter() {
+  local repo
+  local base
+  local head
+  local fake_claude="$test_root/fake-claude-legacy"
+  repo="$(new_repo legacy-v1)"
+  install_generic "$repo"
+
+  cat > "$fake_claude" <<'EOF'
+#!/usr/bin/env bash
+cat >/dev/null
+printf '%s\n' \
+  "No findings." \
+  "VERDICT: SAFE" \
+  "BLOCKERS: no" \
+  "RISK-CLASS: none"
+EOF
+  chmod +x "$fake_claude"
+
+  # A version 1 profile still loads for one release, with a warning, and
+  # the legacy three-marker result contract still parses.
+  cat > "$repo/.review-hooks.conf" <<EOF
+REVIEW_HOOKS_PROFILE_VERSION=1
+AI_REVIEW_ENABLED=1
+AI_REVIEW_CLAUDE_BIN='$fake_claude'
+EOF
+
+  base="$(git -C "$repo" rev-parse HEAD)"
+  printf '%s\n' "legacy review" >> "$repo/README.md"
+  git -C "$repo" add README.md
+  git -C "$repo" commit -qm "Legacy reviewable"
+  head="$(git -C "$repo" rev-parse HEAD)"
+
+  if printf 'refs/heads/main %s refs/heads/main %s\n' "$head" "$base" |
+    AI_REVIEW_CREDENTIAL_SCOPE=ci \
+      bash -c "cd '$repo' && .review-hooks/scripts/run-ai-review-gate.sh" \
+      >/dev/null 2>&1 &&
+    [ -s "$repo/ai-reviews/latest.md" ]; then
+    pass "version 1 profiles run through the compatibility adapter"
+  else
+    fail "version 1 profiles run through the compatibility adapter"
+  fi
+}
+
+test_doctor_reports_profile_version_one() {
+  local repo
+  local doctor="$module_root/../doctor.sh"
+  repo="$(new_repo doctor-v1)"
+  install_generic "$repo"
+
+  cat > "$repo/.review-hooks.conf" <<'EOF'
+REVIEW_HOOKS_PROFILE_VERSION=1
+AI_REVIEW_ENABLED=0
+EOF
+
+  local doctor_output
+  doctor_output="$("$doctor" --repo "$repo" --skip-archives 2>/dev/null || true)"
+
+  if printf '%s\n' "$doctor_output" |
+    grep -q "review profile is version 1" &&
+    ! "$doctor" --repo "$repo" --skip-archives --strict >/dev/null 2>&1; then
+    pass "doctor reports profile version 1 and strict mode fails on it"
+  else
+    fail "doctor reports profile version 1 and strict mode fails on it"
+  fi
+}
+
+test_python_review_gate_suite() {
+  local suite_output
+  if suite_output="$(
+    cd "$module_root/tests" &&
+      PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
+        -s . -p 'test_*.py' 2>&1
+  )"; then
+    pass "python review_gate suite passes"
+  else
+    fail "python review_gate suite passes"
+    printf '%s\n' "$suite_output" | tail -n 40 >&2
+  fi
+}
+
 test_lmm_page_audit_contract() {
   local profile="$module_root/profiles/lmm.example.conf"
 
@@ -260,6 +348,9 @@ test_pre_commit_checks
 test_pre_push_without_ai
 test_ai_review_and_sensitive_refusal
 test_personal_quota_and_multi_ref_refusal
+test_legacy_v1_profile_through_compat_adapter
+test_doctor_reports_profile_version_one
+test_python_review_gate_suite
 test_lmm_page_audit_contract
 
 if [ "$failures" -gt 0 ]; then

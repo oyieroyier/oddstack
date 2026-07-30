@@ -329,7 +329,7 @@ test_dependency_install_is_explicit_and_dry_runnable() {
   local fake_bin="$test_root/dependency-install-bin"
   local output
   repo="$(new_repo dependency-install)"
-  make_dependency_path "$fake_bin" git python3 sed awk grep find
+  make_dependency_path "$fake_bin" git python3 sed awk grep find sha256sum
 
   output="$(python3 "$bundle_root/scripts/manage-dependencies.py" \
     install \
@@ -351,7 +351,7 @@ test_missing_model_clis_are_manual_capabilities() {
   local fake_bin="$test_root/dependency-model-bin"
   local output
   repo="$(new_repo dependency-model)"
-  make_dependency_path "$fake_bin" git python3 rg sed awk grep find
+  make_dependency_path "$fake_bin" git python3 rg sed awk grep find sha256sum
 
   if output="$(python3 "$bundle_root/scripts/manage-dependencies.py" \
     check \
