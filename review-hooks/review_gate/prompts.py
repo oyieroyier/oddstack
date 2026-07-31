@@ -202,23 +202,26 @@ it anyway and state what remains unverified.
         )
 
     expected_data_tags = {
-        "general_files": 1,
-        "general_diff": 1,
-        "backend_files": 1,
-        "backend_diff": 1,
-        "prior_findings": 1 if prior_section else 0,
+        "general_files": 2,
+        "general_diff": 2,
+        "backend_files": 2,
+        "backend_diff": 2,
+        "prior_findings": 2 if prior_section else 0,
     }
     for tag, expected in expected_data_tags.items():
-        for token in ("<%s>" % tag, "</%s>" % tag):
-            if text.count(token) != expected:
-                # Reviewed content contains a data-tag token, so the
-                # untrusted-data boundary is ambiguous and diff text
-                # could read as instructions. Fail closed like the
-                # sentinel check above.
-                raise PromptError(
-                    "the diff contains the %s data tag; refusing to "
-                    "build an ambiguous prompt" % tag
-                )
+        # The model reads these boundaries approximately, so a
+        # whitespace, attribute, or case variant of a reserved tag can
+        # close a data section just as well as the canonical token.
+        # Count every tag-like token that mentions the reserved name
+        # and fail closed on anything beyond the template's own pair.
+        tokens = re.findall(
+            r"<[^>]*%s[^>]*>" % re.escape(tag), text, re.IGNORECASE
+        )
+        if len(tokens) != expected:
+            raise PromptError(
+                "the diff contains a %s data-tag variant; refusing to "
+                "build an ambiguous prompt" % tag
+            )
 
     estimated_tokens = (len(text.encode("utf-8")) + 2) // 3
     if estimated_tokens > policy.max_prompt_tokens:

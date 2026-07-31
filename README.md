@@ -369,7 +369,7 @@ mkdir -p ~/.config/codex-claude-skills
 cp preferences.example.json ~/.config/codex-claude-skills/preferences.json
 ```
 
-The example selects Claude Fable 5/high and GPT 5.6 Sol/high for peer deliberation and architecture
+The example selects Claude Fable 5/xhigh and GPT 5.6 Sol/high for peer deliberation and architecture
 work, a two-call maximum, resume-within-task sessions, Codex-authored architecture, and an `offer`
 peer-audit policy. Only the two `deliberate-with-peer` runners read the model and effort fields.
 Implementation, frontend delegation, code review, hooks, and every other skill retain the
