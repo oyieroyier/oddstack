@@ -7,6 +7,7 @@ provider is automatic.
 
 import hashlib
 import json
+import math
 import os
 import shutil
 
@@ -31,15 +32,22 @@ class ClaudeAdapter:
             "--tools", "",
             "--max-turns", "1",
             "--max-budget-usd", "%.4f" % attempt_cap_usd,
+        ]
+        if self.emits_envelope():
             # The JSON envelope is the only channel that reports actual
             # spend (total_cost_usd), which the ledger needs to settle
             # the reservation.
-            "--output-format", "json",
-        ]
+            argv += ["--output-format", "json"]
         if self.policy.model:
             argv += ["--model", self.policy.model]
         argv.append("-p")
         return argv
+
+    def emits_envelope(self):
+        """Version 1 profiles keep the plain-stdout reviewer contract
+        for their one compatibility release; only version 2 launches
+        with the JSON envelope and can settle actual spend."""
+        return self.policy.profile_version != 1
 
     @staticmethod
     def parse_envelope(stdout_text):
@@ -47,7 +55,9 @@ class ClaudeAdapter:
 
         Either element is None when the envelope does not carry it.
         Malformed stdout returns (None, None): the review result stays
-        untrusted and the ledger keeps charging the assigned cap.
+        untrusted and the ledger keeps charging the assigned cap. A
+        non-finite cost is unusable — NaN poisons the ledger sum and
+        disables the rolling limit — so it stays None as well.
         """
         try:
             data = json.loads(stdout_text)
@@ -61,7 +71,7 @@ class ClaudeAdapter:
         cost = data.get("total_cost_usd")
         if isinstance(cost, bool) or not isinstance(cost, (int, float)):
             cost = None
-        elif cost < 0:
+        elif not math.isfinite(cost) or cost < 0:
             cost = None
         return text, cost
 

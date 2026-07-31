@@ -418,6 +418,18 @@ assert ClaudeAdapter.parse_envelope("plain text") == (None, None)
 assert ClaudeAdapter.parse_envelope(
     '{"result": 5, "total_cost_usd": true}'
 ) == (None, None)
+
+# Non-finite costs cannot poison the window into permitting all spend.
+assert ClaudeAdapter.parse_envelope(
+    '{"result": "x", "total_cost_usd": NaN}'
+) == ("x", None)
+assert not ledger.settle("run-2", float("nan"))
+assert not ledger.settle("run-2", float("inf"))
+
+# Settled amounts round up, never down.
+assert ledger.settle("run-3", 0.00001)
+reserved, total = ledger.reserve("run-4", 2.0, 25.0, 24)
+assert reserved and abs(total - 2.0376) < 1e-9, (reserved, total)
 EOF
   then
     pass "spend ledger settles reservations to reported actual spend"

@@ -609,7 +609,12 @@ class Gate:
             )
 
             stdout_text = outcome.stdout_data.decode("utf-8", errors="replace")
-            result_text, attempt_cost = self.adapter.parse_envelope(stdout_text)
+            if self.adapter.emits_envelope():
+                result_text, attempt_cost = self.adapter.parse_envelope(
+                    stdout_text
+                )
+            else:
+                result_text, attempt_cost = stdout_text, None
             attempt_costs.append(attempt_cost)
 
             completed_cleanly = (
@@ -670,15 +675,16 @@ class Gate:
                 terminal_detail += "\nlaunch error: %s" % outcome.launch_error
             break
 
-        # Settle the reservation when the adapter reported trustworthy
-        # actual spend. A launched attempt with no reported cost keeps
-        # its full cap; a never-launched attempt spent nothing.
-        known_costs = [cost for cost in attempt_costs if cost is not None]
-        if known_costs:
-            unknown = len(attempt_costs) - len(known_costs)
-            self.ledger.settle(
-                ev.run_id, sum(known_costs) + attempt_cap * unknown
-            )
+        # Settle the reservation to what the attempts can prove: the
+        # reported cost where the adapter supplied one, the full cap for
+        # a launched attempt that reported nothing, zero for an attempt
+        # that never launched. When nothing is reclaimed the reservation
+        # already says it all.
+        settled_usd = sum(
+            attempt_cap if cost is None else cost for cost in attempt_costs
+        )
+        if settled_usd != assigned_usd:
+            self.ledger.settle(ev.run_id, settled_usd)
 
         if result is None:
             record = dict(base_record)

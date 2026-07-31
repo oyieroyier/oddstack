@@ -201,7 +201,9 @@ concurrent runs cannot both squeeze under the limit. When the reviewer CLI repor
 (`total_cost_usd` in its JSON envelope), the run appends a settlement entry under the same lock;
 the window sum keeps only the newest entry per run id, so the settlement supersedes the
 reservation without rewriting it, and a crash mid-settle leaves the conservative reservation
-standing. A launched attempt that reports no cost keeps its full assigned cap. This stops scope
+standing. A launched attempt that reports no cost keeps its full assigned cap; an attempt that
+never launched settles to zero. Version 1 profiles keep the plain-stdout reviewer contract for
+their compatibility release and never settle. This stops scope
 creep in a calling agent — many pushes with slightly different trees — from buying an unbounded
 series of individually-in-budget reviews, without letting unreconciled reservations pile phantom
 spend against the limit. Set the limit to `0` to disable the rolling check. `verify` mode never

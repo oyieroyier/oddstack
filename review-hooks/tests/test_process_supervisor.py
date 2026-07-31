@@ -15,6 +15,7 @@ from gate_test_util import (
     GateTestCase,
     REVIEW_GATE,
     SAFE_RESULT,
+    cli_envelope,
     result_script,
 )
 
@@ -169,10 +170,13 @@ class TestStartupRetry(GateTestCase):
             "  exit 7\n"
             "fi\n"
             "cat >/dev/null\n"
-            "echo REVIEW-RESULT-BEGIN\n"
-            "echo '%s'\n"
-            "echo REVIEW-RESULT-END\n"
-        ) % (marker, marker, json.dumps(SAFE_RESULT))
+            "cat <<'ENVELOPE'\n"
+            "%s\n"
+            "ENVELOPE\n"
+        ) % (marker, marker, cli_envelope(
+            "REVIEW-RESULT-BEGIN\n%s\nREVIEW-RESULT-END"
+            % json.dumps(SAFE_RESULT)
+        ))
         fake = self.write_fake_bin(script)
         self.write_profile(fake, extra=(
             "AI_REVIEW_MAX_ATTEMPTS=2\n"
@@ -238,12 +242,15 @@ class TestLingeringDescendant(GateTestCase):
             "cat >/dev/null\n"
             "(\n"
             "  sleep 1\n"
-            "  echo REVIEW-RESULT-BEGIN\n"
-            "  echo '%s'\n"
-            "  echo REVIEW-RESULT-END\n"
+            "  cat <<'ENVELOPE'\n"
+            "%s\n"
+            "ENVELOPE\n"
             ") &\n"
             "exit 0\n"
-        ) % json.dumps(SAFE_RESULT)
+        ) % cli_envelope(
+            "REVIEW-RESULT-BEGIN\n%s\nREVIEW-RESULT-END"
+            % json.dumps(SAFE_RESULT)
+        )
         fake = self.write_fake_bin(script)
         self.write_profile(fake, extra="AI_REVIEW_TOTAL_TIMEOUT=10\n")
         base = self.git_out("rev-parse", "HEAD")

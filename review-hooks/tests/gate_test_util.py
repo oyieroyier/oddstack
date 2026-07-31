@@ -48,9 +48,25 @@ INCONCLUSIVE_RESULT = {
 }
 
 
-def result_script(result):
+def cli_envelope(result_text, total_cost_usd=0.0123):
+    """The claude CLI's -p --output-format json stdout envelope."""
+    return json.dumps({
+        "type": "result",
+        "result": result_text,
+        "session_id": "fake-session",
+        "total_cost_usd": total_cost_usd,
+    })
+
+
+def result_script(result, total_cost_usd=0.0123):
     """A fake reviewer that consumes stdin, counts calls, prints a result."""
-    payload = json.dumps(result)
+    result_text = "\n".join([
+        "some review prose",
+        "REVIEW-RESULT-BEGIN",
+        json.dumps(result),
+        "REVIEW-RESULT-END",
+    ])
+    envelope = cli_envelope(result_text, total_cost_usd)
     return textwrap.dedent("""\
         #!/usr/bin/env bash
         if [ -n "${FAKE_PROMPT_COPY:-}" ]; then
@@ -59,13 +75,10 @@ def result_script(result):
           cat >/dev/null
         fi
         echo "$$" >> "$FAKE_CALL_LOG"
-        echo "some review prose"
-        echo "REVIEW-RESULT-BEGIN"
-        cat <<'JSON'
+        cat <<'ENVELOPE'
         %s
-        JSON
-        echo "REVIEW-RESULT-END"
-    """) % payload
+        ENVELOPE
+    """) % envelope
 
 
 class GateTestCase(unittest.TestCase):

@@ -8,6 +8,7 @@ a reason to paste unknown content into a prompt.
 import fcntl
 import hashlib
 import json
+import math
 import os
 import re
 import tempfile
@@ -203,10 +204,17 @@ class SpendLedger:
                 continue
             if timestamp < cutoff:
                 continue
+            # A non-finite number would poison the sum and make every
+            # limit comparison false, disabling the gate; treat it as
+            # absent and fall back conservatively.
             actual = entry.get("actual_usd")
             assigned = entry.get("assigned_usd")
-            charge = actual if isinstance(actual, (int, float)) else assigned
-            if not isinstance(charge, (int, float)):
+            charge = None
+            if isinstance(actual, (int, float)) and math.isfinite(actual):
+                charge = actual
+            elif isinstance(assigned, (int, float)) and math.isfinite(assigned):
+                charge = assigned
+            if charge is None:
                 continue
             run_id = entry.get("run_id")
             if isinstance(run_id, str) and run_id:
@@ -239,8 +247,9 @@ class SpendLedger:
                     "run_id": run_id,
                     "assigned_usd": assigned_usd,
                     "actual_usd": None,
-                }, sort_keys=True) + "\n")
+                }, sort_keys=True, allow_nan=False) + "\n")
                 handle.flush()
+                os.fsync(handle.fileno())
                 return True, total
             finally:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
@@ -248,23 +257,27 @@ class SpendLedger:
     def settle(self, run_id, actual_usd):
         """Record trustworthy actual spend for a reserved run.
 
-        Appends a settlement entry carrying the reservation's timestamp;
-        the window sum keeps only the newest entry per run id, so the
-        settlement supersedes the reservation without rewriting it. Any
-        failure mid-settle — including filesystem errors — leaves the
-        conservative reservation standing and returns False; a completed
-        review is never voided over this advisory record.
+        Appends a settlement entry stamped at settle time; the window
+        sum keeps only the newest entry per run id, so the settlement
+        supersedes the reservation without rewriting it, and the spend
+        stays in the window at least as long as the reservation would
+        have. The amount rounds up, never down. Any failure mid-settle —
+        including filesystem errors — leaves the conservative
+        reservation standing and returns False; a completed review is
+        never voided over this advisory record.
         """
         if isinstance(actual_usd, bool):
             return False
-        if not isinstance(actual_usd, (int, float)) or actual_usd < 0:
+        if not isinstance(actual_usd, (int, float)):
+            return False
+        if not math.isfinite(actual_usd) or actual_usd < 0:
             return False
         try:
             with open(self.path, "a+", encoding="utf-8") as handle:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
                 try:
                     handle.seek(0)
-                    timestamp = None
+                    reserved = False
                     assigned = None
                     for line in handle:
                         try:
@@ -275,24 +288,28 @@ class SpendLedger:
                             continue
                         if entry.get("run_id") != run_id:
                             continue
-                        if isinstance(entry.get("timestamp"), (int, float)):
-                            timestamp = entry["timestamp"]
+                        reserved = True
                         if isinstance(entry.get("assigned_usd"), (int, float)):
                             assigned = entry["assigned_usd"]
-                    if timestamp is None:
+                    if not reserved:
                         return False
                     handle.seek(0, os.SEEK_END)
                     handle.write(json.dumps({
-                        "timestamp": timestamp,
+                        "timestamp": time.time(),
                         "run_id": run_id,
                         "assigned_usd": assigned,
-                        "actual_usd": round(float(actual_usd), 4),
-                    }, sort_keys=True) + "\n")
+                        # round() before ceil kills binary-float fuzz
+                        # (0.0375 * 10000 == 375.00000000000006).
+                        "actual_usd": math.ceil(
+                            round(float(actual_usd) * 10000, 6)
+                        ) / 10000,
+                    }, sort_keys=True, allow_nan=False) + "\n")
                     handle.flush()
+                    os.fsync(handle.fileno())
                     return True
                 finally:
                     fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-        except OSError:
+        except (OSError, ValueError):
             return False
 
 

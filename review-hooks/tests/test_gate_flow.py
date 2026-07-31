@@ -11,6 +11,7 @@ from gate_test_util import (
     GateTestCase,
     INCONCLUSIVE_RESULT,
     SAFE_RESULT,
+    cli_envelope,
     result_script,
 )
 
@@ -170,9 +171,13 @@ class TestInconclusiveAndInvalid(GateTestCase):
             "#!/usr/bin/env bash\n"
             "cat >/dev/null\n"
             'echo "$$" >> "$FAKE_CALL_LOG"\n'
-            "echo REVIEW-RESULT-BEGIN\n"
-            "echo '{\"schema_version\": 1, \"verdict\": \"SAFE\"'\n"
-            "echo REVIEW-RESULT-END\n"
+            "cat <<'ENVELOPE'\n"
+            "%s\n"
+            "ENVELOPE\n"
+        ) % cli_envelope(
+            "REVIEW-RESULT-BEGIN\n"
+            '{"schema_version": 1, "verdict": "SAFE"\n'
+            "REVIEW-RESULT-END"
         )
         fake = self.write_fake_bin(script)
         self.write_profile(fake)
@@ -245,10 +250,13 @@ class TestCacheKeyInputs(GateTestCase):
             "cat >/dev/null\n"
             'echo "$$" >> "$FAKE_CALL_LOG"\n'
             'printf "%%s\\n" "$@" > "%s"\n'
-            "echo REVIEW-RESULT-BEGIN\n"
-            "echo '%s'\n"
-            "echo REVIEW-RESULT-END\n"
-        ) % (prompt_copy, json.dumps(SAFE_RESULT))
+            "cat <<'ENVELOPE'\n"
+            "%s\n"
+            "ENVELOPE\n"
+        ) % (prompt_copy, cli_envelope(
+            "REVIEW-RESULT-BEGIN\n%s\nREVIEW-RESULT-END"
+            % json.dumps(SAFE_RESULT)
+        ))
         fake = self.write_fake_bin(script)
         self.write_profile(fake, extra=(
             "AI_REVIEW_MAX_ATTEMPTS=2\n"
@@ -265,6 +273,7 @@ class TestCacheKeyInputs(GateTestCase):
             argv = handle.read().splitlines()
         self.assertIn("--model", argv)
         self.assertIn("test-model", argv)
+        self.assertIn("--output-format", argv)
         self.assertIn("--max-budget-usd", argv)
         # Attempt caps split the run cap; two reserved attempts on a
         # 2.00 budget give each launch a 1.00 cap.
@@ -371,7 +380,9 @@ class TestSkipBinding(GateTestCase):
 
 class TestSpendLedger(GateTestCase):
     def test_rolling_limit_refuses_paid_launch(self):
-        fake = self.write_fake_bin(result_script(SAFE_RESULT))
+        fake = self.write_fake_bin(
+            result_script(SAFE_RESULT, total_cost_usd=1.5)
+        )
         self.write_profile(
             fake,
             extra=(
@@ -389,15 +400,46 @@ class TestSpendLedger(GateTestCase):
         ledger_path = os.path.join(
             self.repo, "ai-reviews", "spend", "ledger.jsonl"
         )
-        self.assertTrue(os.path.exists(ledger_path))
+        with open(ledger_path, "r", encoding="utf-8") as handle:
+            entries = [json.loads(line) for line in handle if line.strip()]
+        # The 2.00 reservation settled down to the reported 1.50.
+        self.assertEqual(len(entries), 2)
+        self.assertEqual(entries[0]["actual_usd"], None)
+        self.assertEqual(entries[1]["actual_usd"], 1.5)
 
-        # A second distinct tree wants 2.00 more; 2.00 + 2.00 > 3.00.
+        # A second distinct tree wants 2.00 more; 1.50 + 2.00 > 3.00.
         head2 = self.commit_change("more.txt", "more\n", "More")
         second = self.run_gate("review", "--base", base, "--head", head2)
         self.assertEqual(second.returncode, 2)
         self.assertEqual(self.call_count(), 1)
         record = self.latest_run_record()
         self.assertEqual(record["decision"]["reason_code"], "spend_limit")
+
+    def test_settled_actual_spend_frees_the_rolling_window(self):
+        # Twelve unreconciled 2.00 reservations once filled a 25.00
+        # window with phantom spend; settled real cost must not.
+        fake = self.write_fake_bin(
+            result_script(SAFE_RESULT, total_cost_usd=0.05)
+        )
+        self.write_profile(
+            fake,
+            extra=(
+                "AI_REVIEW_ROLLING_SPEND_LIMIT_USD=3.00\n"
+                "AI_REVIEW_MAX_BUDGET_USD=2.00\n"
+            ),
+        )
+        base = self.git_out("rev-parse", "HEAD")
+        head = self.commit_change()
+
+        first = self.run_gate("review", "--base", base, "--head", head)
+        self.assertEqual(first.returncode, 0, first.stderr)
+
+        # 0.05 settled + 2.00 reserved stays under 3.00, so a second
+        # distinct tree still buys a review.
+        head2 = self.commit_change("more.txt", "more\n", "More")
+        second = self.run_gate("review", "--base", base, "--head", head2)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual(self.call_count(), 2)
 
     def test_attempt_caps_floor_so_their_sum_stays_under_the_run_cap(self):
         prompt_copy = os.path.join(self.root, "argv-floor-check")
@@ -406,10 +448,13 @@ class TestSpendLedger(GateTestCase):
             "cat >/dev/null\n"
             'echo "$$" >> "$FAKE_CALL_LOG"\n'
             'printf "%%s\\n" "$@" > "%s"\n'
-            "echo REVIEW-RESULT-BEGIN\n"
-            "echo '%s'\n"
-            "echo REVIEW-RESULT-END\n"
-        ) % (prompt_copy, json.dumps(SAFE_RESULT))
+            "cat <<'ENVELOPE'\n"
+            "%s\n"
+            "ENVELOPE\n"
+        ) % (prompt_copy, cli_envelope(
+            "REVIEW-RESULT-BEGIN\n%s\nREVIEW-RESULT-END"
+            % json.dumps(SAFE_RESULT)
+        ))
         fake = self.write_fake_bin(script)
         self.write_profile(fake, extra=(
             "AI_REVIEW_MAX_ATTEMPTS=2\n"

@@ -165,10 +165,9 @@ test_ai_review_and_sensitive_refusal() {
   cat > "$fake_claude" <<'EOF'
 #!/usr/bin/env bash
 cat >/dev/null
-echo "No findings."
-echo "REVIEW-RESULT-BEGIN"
-echo '{"schema_version": 1, "verdict": "SAFE", "risk_class": "none", "findings": [], "limitations": []}'
-echo "REVIEW-RESULT-END"
+cat <<'ENVELOPE'
+{"type":"result","result":"No findings.\nREVIEW-RESULT-BEGIN\n{\"schema_version\": 1, \"verdict\": \"SAFE\", \"risk_class\": \"none\", \"findings\": [], \"limitations\": []}\nREVIEW-RESULT-END","session_id":"fake-session","total_cost_usd":0.0123}
+ENVELOPE
 EOF
   chmod +x "$fake_claude"
   {
