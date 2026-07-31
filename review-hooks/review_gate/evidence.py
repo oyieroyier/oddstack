@@ -42,12 +42,14 @@ class RunEvidence:
             store.out_dir(repo_root), "runs", self.run_id
         )
 
-    def record_attempt(self, index, outcome, reason_code, assigned_usd):
+    def record_attempt(
+        self, index, outcome, reason_code, assigned_usd, actual_usd=None
+    ):
         self.attempts.append({
             "attempt": index,
             "reason_code": reason_code,
             "assigned_usd": assigned_usd,
-            "actual_usd": None,
+            "actual_usd": actual_usd,
             "started": outcome.started,
             "launch_error": outcome.launch_error,
             "exit_code": outcome.exit_code,

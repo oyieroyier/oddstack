@@ -6,6 +6,7 @@ provider is automatic.
 """
 
 import hashlib
+import json
 import os
 import shutil
 
@@ -30,11 +31,39 @@ class ClaudeAdapter:
             "--tools", "",
             "--max-turns", "1",
             "--max-budget-usd", "%.4f" % attempt_cap_usd,
+            # The JSON envelope is the only channel that reports actual
+            # spend (total_cost_usd), which the ledger needs to settle
+            # the reservation.
+            "--output-format", "json",
         ]
         if self.policy.model:
             argv += ["--model", self.policy.model]
         argv.append("-p")
         return argv
+
+    @staticmethod
+    def parse_envelope(stdout_text):
+        """Split the CLI's JSON envelope into (result_text, actual_usd).
+
+        Either element is None when the envelope does not carry it.
+        Malformed stdout returns (None, None): the review result stays
+        untrusted and the ledger keeps charging the assigned cap.
+        """
+        try:
+            data = json.loads(stdout_text)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return None, None
+        if not isinstance(data, dict):
+            return None, None
+        text = data.get("result")
+        if not isinstance(text, str):
+            text = None
+        cost = data.get("total_cost_usd")
+        if isinstance(cost, bool) or not isinstance(cost, (int, float)):
+            cost = None
+        elif cost < 0:
+            cost = None
+        return text, cost
 
     def capability_fingerprint(self):
         """Fingerprint of the reviewer executable.

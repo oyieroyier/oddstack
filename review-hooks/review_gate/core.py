@@ -586,6 +586,7 @@ class Gate:
         result = None
         terminal_reason = None
         terminal_detail = ""
+        attempt_costs = []
 
         attempt_index = 0
         while attempt_index < policy.max_attempts:
@@ -607,6 +608,10 @@ class Gate:
                 environ=self.environ,
             )
 
+            stdout_text = outcome.stdout_data.decode("utf-8", errors="replace")
+            result_text, attempt_cost = self.adapter.parse_envelope(stdout_text)
+            attempt_costs.append(attempt_cost)
+
             completed_cleanly = (
                 outcome.started
                 and outcome.exit_code == 0
@@ -616,22 +621,32 @@ class Gate:
                 and not outcome.interrupted
             )
             if completed_cleanly:
-                stdout_text = outcome.stdout_data.decode("utf-8", errors="replace")
                 try:
+                    if result_text is None:
+                        raise ResultError(
+                            "reviewer stdout is not a CLI result envelope"
+                        )
                     result = results.parse_result(
-                        stdout_text, policy.prompt_template_version
+                        result_text, policy.prompt_template_version
                     )
-                    ev.record_attempt(attempt_index, outcome, "completed", attempt_cap)
+                    ev.record_attempt(
+                        attempt_index, outcome, "completed", attempt_cap,
+                        actual_usd=attempt_cost,
+                    )
                 except ResultError as err:
                     ev.record_attempt(
-                        attempt_index, outcome, "invalid_result", attempt_cap
+                        attempt_index, outcome, "invalid_result", attempt_cap,
+                        actual_usd=attempt_cost,
                     )
                     terminal_reason = "invalid_result"
                     terminal_detail = str(err)
                 break
 
             reason = self.adapter.classify_failure(outcome)
-            ev.record_attempt(attempt_index, outcome, reason, attempt_cap)
+            ev.record_attempt(
+                attempt_index, outcome, reason, attempt_cap,
+                actual_usd=attempt_cost,
+            )
             if (
                 reason == "startup_transport"
                 and reason in policy.retryable_failures
@@ -654,6 +669,16 @@ class Gate:
             if outcome.launch_error:
                 terminal_detail += "\nlaunch error: %s" % outcome.launch_error
             break
+
+        # Settle the reservation when the adapter reported trustworthy
+        # actual spend. A launched attempt with no reported cost keeps
+        # its full cap; a never-launched attempt spent nothing.
+        known_costs = [cost for cost in attempt_costs if cost is not None]
+        if known_costs:
+            unknown = len(attempt_costs) - len(known_costs)
+            self.ledger.settle(
+                ev.run_id, sum(known_costs) + attempt_cap * unknown
+            )
 
         if result is None:
             record = dict(base_record)

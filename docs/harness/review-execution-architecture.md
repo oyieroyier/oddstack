@@ -197,16 +197,22 @@ lock on `ai-reviews/spend/ledger.jsonl`, sums the recorded spend inside
 and appends its own reservation under the same lock. When the sum plus the new run's cap passes
 `AI_REVIEW_ROLLING_SPEND_LIMIT_USD`, the run ends `INCONCLUSIVE` before any reviewer starts.
 Reserving before launch means a crash mid-run can never leave paid spend unrecorded, and two
-concurrent runs cannot both squeeze under the limit. A reservation is never reclaimed. This stops scope creep in a calling agent — many
-pushes with slightly different trees — from buying an unbounded series of individually-in-budget
-reviews. Set the limit to `0` to disable the rolling check. `verify` mode never spends, so it
-never consults the ledger.
+concurrent runs cannot both squeeze under the limit. When the reviewer CLI reports actual spend
+(`total_cost_usd` in its JSON envelope), the run appends a settlement entry under the same lock;
+the window sum keeps only the newest entry per run id, so the settlement supersedes the
+reservation without rewriting it, and a crash mid-settle leaves the conservative reservation
+standing. A launched attempt that reports no cost keeps its full assigned cap. This stops scope
+creep in a calling agent — many pushes with slightly different trees — from buying an unbounded
+series of individually-in-budget reviews, without letting unreconciled reservations pile phantom
+spend against the limit. Set the limit to `0` to disable the rolling check. `verify` mode never
+spends, so it never consults the ledger.
 
 The default is one attempt. A profile may raise it to two and opt into a failure listed in
 `AI_REVIEW_RETRYABLE_FAILURES`. The first version supports `startup_transport`: a known adapter
 startup or transport failure that ends before the short retry window and before a review result
-begins. The ledger reserves both attempt caps before the first launch. It does not reclaim an
-unused cap unless the adapter supplies trustworthy actual-spend data.
+begins. The ledger reserves both attempt caps before the first launch and settles them to the
+adapter's reported actual spend once the run ends; a cap is only reclaimed through that
+settlement, never by assumption.
 
 The runner does not retry:
 

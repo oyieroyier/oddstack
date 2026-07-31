@@ -382,6 +382,50 @@ test_deliberation_preferences_and_alerts_stay_scoped() {
   fi
 }
 
+test_spend_ledger_settles_to_actual_spend() {
+  local repo
+  repo="$(new_repo spend-ledger)"
+
+  if PYTHONPATH="$bundle_root/review-hooks" python3 - "$repo" <<'EOF'
+import sys
+
+from review_gate.adapter import ClaudeAdapter
+from review_gate.store import SpendLedger
+
+repo = sys.argv[1]
+ledger = SpendLedger(repo)
+
+reserved, total = ledger.reserve("run-1", 2.0, 25.0, 24)
+assert reserved and total == 0.0, (reserved, total)
+assert ledger.settle("run-1", 0.0375)
+
+# The next run charges the settled cents, not the reserved cap.
+reserved, total = ledger.reserve("run-2", 2.0, 25.0, 24)
+assert reserved and abs(total - 0.0375) < 1e-9, (reserved, total)
+
+# Settling an unknown run or a bad amount changes nothing.
+assert not ledger.settle("missing-run", 1.0)
+assert not ledger.settle("run-2", -1.0)
+reserved, total = ledger.reserve("run-3", 2.0, 25.0, 24)
+assert reserved and abs(total - 2.0375) < 1e-9, (reserved, total)
+
+# The envelope parser feeds the settlement and rejects junk.
+text, cost = ClaudeAdapter.parse_envelope(
+    '{"result": "VERDICT: SAFE", "total_cost_usd": 0.031}'
+)
+assert text == "VERDICT: SAFE" and cost == 0.031, (text, cost)
+assert ClaudeAdapter.parse_envelope("plain text") == (None, None)
+assert ClaudeAdapter.parse_envelope(
+    '{"result": 5, "total_cost_usd": true}'
+) == (None, None)
+EOF
+  then
+    pass "spend ledger settles reservations to reported actual spend"
+  else
+    fail "spend ledger settles reservations to reported actual spend"
+  fi
+}
+
 test_install_is_inactive
 test_drift_refusal
 test_explicit_force
@@ -397,6 +441,7 @@ test_dependency_check_is_profile_aware
 test_dependency_install_is_explicit_and_dry_runnable
 test_missing_model_clis_are_manual_capabilities
 test_deliberation_preferences_and_alerts_stay_scoped
+test_spend_ledger_settles_to_actual_spend
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures of $tests tests failed" >&2

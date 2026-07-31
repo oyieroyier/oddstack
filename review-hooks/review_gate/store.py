@@ -183,12 +183,14 @@ class SpendLedger:
     def _window_total(handle, window_hours, now):
         """Sum recorded spend inside the window.
 
-        Counts the assigned cap when actual use is unknown. Malformed
-        lines are skipped; the ledger is advisory evidence, not a
-        financial record.
+        Counts the assigned cap when actual use is unknown. A run may
+        appear more than once (a reservation, then a settlement); only
+        the newest entry per run id counts. Malformed lines are skipped;
+        the ledger is advisory evidence, not a financial record.
         """
         cutoff = now - window_hours * 3600
         total = 0.0
+        by_run = {}
         for line in handle:
             try:
                 entry = json.loads(line)
@@ -204,9 +206,14 @@ class SpendLedger:
             actual = entry.get("actual_usd")
             assigned = entry.get("assigned_usd")
             charge = actual if isinstance(actual, (int, float)) else assigned
-            if isinstance(charge, (int, float)):
+            if not isinstance(charge, (int, float)):
+                continue
+            run_id = entry.get("run_id")
+            if isinstance(run_id, str) and run_id:
+                by_run[run_id] = float(charge)
+            else:
                 total += float(charge)
-        return total
+        return total + sum(by_run.values())
 
     def reserve(self, run_id, assigned_usd, limit_usd, window_hours):
         """Atomically check the rolling window and record a reservation.
@@ -237,6 +244,56 @@ class SpendLedger:
                 return True, total
             finally:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+    def settle(self, run_id, actual_usd):
+        """Record trustworthy actual spend for a reserved run.
+
+        Appends a settlement entry carrying the reservation's timestamp;
+        the window sum keeps only the newest entry per run id, so the
+        settlement supersedes the reservation without rewriting it. Any
+        failure mid-settle — including filesystem errors — leaves the
+        conservative reservation standing and returns False; a completed
+        review is never voided over this advisory record.
+        """
+        if isinstance(actual_usd, bool):
+            return False
+        if not isinstance(actual_usd, (int, float)) or actual_usd < 0:
+            return False
+        try:
+            with open(self.path, "a+", encoding="utf-8") as handle:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+                try:
+                    handle.seek(0)
+                    timestamp = None
+                    assigned = None
+                    for line in handle:
+                        try:
+                            entry = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        if not isinstance(entry, dict):
+                            continue
+                        if entry.get("run_id") != run_id:
+                            continue
+                        if isinstance(entry.get("timestamp"), (int, float)):
+                            timestamp = entry["timestamp"]
+                        if isinstance(entry.get("assigned_usd"), (int, float)):
+                            assigned = entry["assigned_usd"]
+                    if timestamp is None:
+                        return False
+                    handle.seek(0, os.SEEK_END)
+                    handle.write(json.dumps({
+                        "timestamp": timestamp,
+                        "run_id": run_id,
+                        "assigned_usd": assigned,
+                        "actual_usd": round(float(actual_usd), 4),
+                    }, sort_keys=True) + "\n")
+                    handle.flush()
+                    return True
+                finally:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        except OSError:
+            return False
 
 
 def ack_digest(report_digest, base, tree, risk_class, policy_hash):

@@ -5,7 +5,7 @@ and an evidence path. Hooks and operator commands are thin adapters over
 `review_gate.cli`.
 """
 
-RUNTIME_VERSION = "2.0.0"
+RUNTIME_VERSION = "2.1.0"
 RUN_SCHEMA_VERSION = 1
 RESULT_SCHEMA_VERSION = 1
 CACHE_SCHEMA_VERSION = 1
