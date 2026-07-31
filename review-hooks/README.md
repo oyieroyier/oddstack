@@ -197,10 +197,20 @@ When enabled, the gate:
 - runs the reviewer in its own process group and reaps the whole group on every exit path;
 - bounds the run with one deadline and one spend cap, plus a rolling cross-run spend ledger;
 - refuses implicit use of personal model quota and unnamed reviewer models;
-- caches decisions by base, tree, policy hash, prompt version, and reviewer identity;
+- caches decisions by base, tree, policy hash, prompt template fingerprint, and reviewer
+  identity, so editing the prompt template voids every cached verdict;
 - carries structured open findings into an incremental follow-up, size-capped;
 - writes `ai-reviews/runs/<run-id>/` evidence for every decision, including `INCONCLUSIVE`;
 - exits 0 (accepted), 1 (blocking findings), or 2 (no trustworthy decision).
+
+### Changes the gate refuses to review
+
+The prompt embeds the diff inside reserved data tags and a result sentinel. A diff whose content
+contains those tokens — including any change to `review_gate/prompts.py` itself — could forge the
+data boundary or the verdict, so the gate fails closed instead of building the prompt. The same
+applies to a diff over the configured size budgets. Review such a change with another tool
+(a read-only Codex or Claude review, or a human), then use the skip flow below; the skip writes
+its own evidence run.
 
 ### Acknowledging a blocking review
 

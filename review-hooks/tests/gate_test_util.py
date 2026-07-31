@@ -149,13 +149,13 @@ class GateTestCase(unittest.TestCase):
         os.chmod(path, 0o755)
         return path
 
-    def run_gate(self, *args, env_extra=None, cwd=None):
+    def run_gate(self, *args, env_extra=None, cwd=None, gate=None):
         env = dict(os.environ)
         env.update(self.base_env)
         if env_extra:
             env.update(env_extra)
         return subprocess.run(
-            [REVIEW_GATE] + list(args),
+            [gate or REVIEW_GATE] + list(args),
             cwd=cwd or self.repo,
             env=env,
             capture_output=True,

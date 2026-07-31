@@ -1,5 +1,6 @@
 """Scope classification and prompt construction."""
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass
@@ -8,6 +9,24 @@ from . import gitwork
 
 RESULT_BEGIN = "REVIEW-RESULT-BEGIN"
 RESULT_END = "REVIEW-RESULT-END"
+
+_TEMPLATE_FINGERPRINT = None
+
+
+def template_fingerprint():
+    """Hash of this module's source text.
+
+    The prompt template and its guards decide what the reviewer sees, so
+    a cached verdict minted under one template must not satisfy another.
+    Hashing the whole file is deliberately coarse: an edit that only
+    touches comments costs one bounded re-review, while a template edit
+    that kept a stale verdict would cost a missed finding.
+    """
+    global _TEMPLATE_FINGERPRINT
+    if _TEMPLATE_FINGERPRINT is None:
+        with open(__file__, "rb") as handle:
+            _TEMPLATE_FINGERPRINT = hashlib.sha256(handle.read()).hexdigest()
+    return _TEMPLATE_FINGERPRINT
 
 
 class PromptError(Exception):

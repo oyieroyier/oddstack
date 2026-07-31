@@ -198,7 +198,10 @@ class Gate:
             target.base,
             target.tree,
             policy_hash,
-            self.policy.prompt_template_version,
+            "%s:%s" % (
+                self.policy.prompt_template_version,
+                prompts.template_fingerprint(),
+            ),
             identity,
         )
 

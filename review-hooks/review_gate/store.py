@@ -61,9 +61,9 @@ def sha256_file(path):
     return digest.hexdigest()
 
 
-def cache_key(base, tree, policy_hash, prompt_template_version, identity):
+def cache_key(base, tree, policy_hash, prompt_identity, identity):
     return sha256_text(
-        "\n".join([base, tree, policy_hash, prompt_template_version, identity])
+        "\n".join([base, tree, policy_hash, prompt_identity, identity])
     )
 
 

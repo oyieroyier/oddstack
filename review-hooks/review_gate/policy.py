@@ -57,10 +57,11 @@ class Policy:
         return PROMPT_TEMPLATE_VERSION_V2
 
     def policy_hash(self):
-        """Hash of every control that affects review completeness.
+        """Hash of every profile control that affects review completeness.
 
         The reviewer identity is hashed separately; the model is part of
-        identity, not policy.
+        identity, not policy. The prompt template text is fingerprinted
+        at cache-key assembly (prompts.template_fingerprint), not here.
         """
         parts = [
             "profile_version=%d" % self.profile_version,

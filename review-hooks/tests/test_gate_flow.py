@@ -3,11 +3,13 @@
 import json
 import os
 import re
+import shutil
 import time
 import unittest
 
 from gate_test_util import (
     BLOCKING_RESULT,
+    MODULE_ROOT,
     GateTestCase,
     INCONCLUSIVE_RESULT,
     SAFE_RESULT,
@@ -230,6 +232,45 @@ class TestCacheKeyInputs(GateTestCase):
             self.run_gate("review", "--base", base, "--head", head).returncode, 0
         )
         self.assertEqual(self.call_count(), 3)
+
+    def test_template_text_change_misses_cache(self):
+        fake = self.write_fake_bin(result_script(SAFE_RESULT))
+        self.write_profile(fake)
+        base = self.git_out("rev-parse", "HEAD")
+        head = self.commit_change()
+
+        self.assertEqual(
+            self.run_gate("review", "--base", base, "--head", head).returncode, 0
+        )
+        self.assertEqual(self.call_count(), 1)
+
+        # An unmodified copy of the runtime shares the cache.
+        copy_root = os.path.join(self.root, "gate-copy")
+        shutil.copytree(
+            MODULE_ROOT,
+            copy_root,
+            ignore=shutil.ignore_patterns("__pycache__", "tests"),
+        )
+        copy_gate = os.path.join(copy_root, "bin", "review-gate")
+        self.assertEqual(
+            self.run_gate(
+                "review", "--base", base, "--head", head, gate=copy_gate
+            ).returncode,
+            0,
+        )
+        self.assertEqual(self.call_count(), 1)
+
+        # Any edit to the prompt template module must miss the cache.
+        prompts_path = os.path.join(copy_root, "review_gate", "prompts.py")
+        with open(prompts_path, "a", encoding="utf-8") as handle:
+            handle.write("\n# template edited by cache test\n")
+        self.assertEqual(
+            self.run_gate(
+                "review", "--base", base, "--head", head, gate=copy_gate
+            ).returncode,
+            0,
+        )
+        self.assertEqual(self.call_count(), 2)
 
     def test_unnamed_model_refuses_paid_attempt(self):
         fake = self.write_fake_bin(result_script(SAFE_RESULT))
