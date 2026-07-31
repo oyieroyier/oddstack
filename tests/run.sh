@@ -148,6 +148,7 @@ test_bootstrap_activation() {
     --profile generic >/dev/null &&
     [ "$(git -C "$repo" config --local --get core.hooksPath)" = ".collaboration-hooks" ] &&
     [ -x "$repo/.collaboration-hooks/pre-commit" ] &&
+    [ -x "$repo/.collaboration-hooks/commit-msg" ] &&
     [ -x "$repo/.collaboration-hooks/pre-push" ] &&
     ! grep -Eq '^[[:space:]]*AI_REVIEW_ENABLED=1' "$repo/.review-hooks.conf"; then
     pass "bootstrap explicitly activates deterministic gates without AI review"

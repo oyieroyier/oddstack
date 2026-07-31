@@ -60,6 +60,7 @@ test_install_and_deactivate() {
   if install_generic "$repo" &&
     [ "$(git -C "$repo" config --local --get core.hooksPath)" = ".collaboration-hooks" ] &&
     [ -x "$repo/.collaboration-hooks/pre-commit" ] &&
+    [ -x "$repo/.collaboration-hooks/commit-msg" ] &&
     [ -x "$repo/.review-hooks/scripts/run-ai-review-gate.sh" ] &&
     [ -x "$repo/.review-hooks/bin/review-gate" ] &&
     [ -f "$repo/.review-hooks/review_gate/core.py" ] &&
@@ -128,6 +129,88 @@ test_pre_commit_checks() {
     fail "pre-commit blocks a staged secret"
   else
     pass "pre-commit blocks a staged secret"
+  fi
+}
+
+test_doctor_tolerates_pre_2_1_runtime() {
+  local repo
+  local doctor="$module_root/../doctor.sh"
+  local baseline
+  local status
+  local output
+  repo="$(new_repo doctor-pre-2-1)"
+  install_generic "$repo"
+
+  "$doctor" --repo "$repo" --skip-archives >/dev/null 2>&1
+  baseline=$?
+
+  rm "$repo/.collaboration-hooks/commit-msg"
+  printf '2.0.0\n' > "$repo/.review-hooks/VERSION"
+
+  output="$("$doctor" --repo "$repo" --skip-archives 2>&1)"
+  status=$?
+
+  if [ "$status" -eq "$baseline" ] &&
+    printf '%s\n' "$output" | grep -q "predates 2.1" &&
+    ! printf '%s\n' "$output" | grep -q "commit-msg gate is missing or not executable"; then
+    pass "doctor warns instead of failing on a pre-2.1 runtime"
+  else
+    fail "doctor warns instead of failing on a pre-2.1 runtime"
+  fi
+}
+
+test_force_upgrade_keeps_profile() {
+  local repo
+  repo="$(new_repo upgrade)"
+  install_generic "$repo"
+  printf '%s\n' "PRE_PUSH_COMMANDS='true # custom-marker'" >> "$repo/.review-hooks.conf"
+  rm "$repo/.collaboration-hooks/commit-msg"
+
+  if "$module_root/install.sh" --repo "$repo" --force >/dev/null &&
+    grep -q "custom-marker" "$repo/.review-hooks.conf" &&
+    [ -x "$repo/.collaboration-hooks/commit-msg" ]; then
+    pass "forced upgrade keeps the profile and restores the commit-msg gate"
+  else
+    fail "forced upgrade keeps the profile and restores the commit-msg gate"
+  fi
+
+  if "$module_root/install.sh" --repo "$repo" --force --profile generic >/dev/null &&
+    ! grep -q "custom-marker" "$repo/.review-hooks.conf"; then
+    pass "an explicit --profile replaces the existing profile"
+  else
+    fail "an explicit --profile replaces the existing profile"
+  fi
+}
+
+test_commit_msg_checks() {
+  local repo
+  repo="$(new_repo commit-msg)"
+  install_generic "$repo"
+
+  printf '%s\n' "one" > "$repo/one.txt"
+  git -C "$repo" add one.txt
+  if ! git -C "$repo" commit -qm "Empty commands leave the message alone"; then
+    fail "commit-msg is a no-op with empty COMMIT_MSG_COMMANDS"
+    return
+  fi
+  pass "commit-msg is a no-op with empty COMMIT_MSG_COMMANDS"
+
+  cat >> "$repo/.review-hooks.conf" <<'EOF'
+COMMIT_MSG_COMMANDS='! grep -qi "forbidden" "$REVIEW_HOOKS_COMMIT_MSG_FILE"'
+EOF
+
+  printf '%s\n' "two" > "$repo/two.txt"
+  git -C "$repo" add two.txt
+  if git -C "$repo" commit -qm "A forbidden message" >/dev/null 2>&1; then
+    fail "commit-msg blocks a message the configured command rejects"
+  else
+    pass "commit-msg blocks a message the configured command rejects"
+  fi
+
+  if git -C "$repo" commit -qm "A clean message"; then
+    pass "commit-msg accepts a message the configured command allows"
+  else
+    fail "commit-msg accepts a message the configured command allows"
   fi
 }
 
@@ -344,6 +427,9 @@ test_install_and_deactivate
 test_existing_hook_refusal_and_composition
 test_hook_path_restore
 test_pre_commit_checks
+test_doctor_tolerates_pre_2_1_runtime
+test_force_upgrade_keeps_profile
+test_commit_msg_checks
 test_pre_push_without_ai
 test_ai_review_and_sensitive_refusal
 test_personal_quota_and_multi_ref_refusal

@@ -55,6 +55,7 @@ Choose one of these approaches:
 
    ```bash
    .review-hooks/scripts/check-staged-change.sh
+   .review-hooks/scripts/check-commit-message.sh "$1"   # from a commit-msg hook
    .review-hooks/scripts/run-pre-push-gate.sh
    ```
 
@@ -88,12 +89,16 @@ Deterministic controls:
 ```bash
 PRE_COMMIT_SECRET_SCAN=1
 PRE_COMMIT_COMMANDS=''
+COMMIT_MSG_COMMANDS=''
 PRE_PUSH_COMMANDS=''
 ```
 
 Commands are newline-separated Bash commands executed from the repository root. Pre-commit
 commands receive `REVIEW_HOOKS_STAGED_FILES_FILE`, a temporary newline-delimited list of staged
-paths. Pre-push commands receive `REVIEW_HOOKS_PUSH_UPDATES_FILE`, which contains Git's pre-push
+paths. Commit-msg commands receive `REVIEW_HOOKS_COMMIT_MSG_FILE`, the absolute path of the
+commit-message file; an empty `COMMIT_MSG_COMMANDS` makes the hook a no-op. A command's exit code
+blocks the commit, so a warn-only checker must exit zero itself or carry a trailing `|| true`.
+Pre-push commands receive `REVIEW_HOOKS_PUSH_UPDATES_FILE`, which contains Git's pre-push
 standard-input records.
 
 AI-review controls (version 2):

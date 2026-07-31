@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Configurable commit-message checks. Empty COMMIT_MSG_COMMANDS is a no-op.
+
+set -uo pipefail
+
+[ "${SKIP_PRE_COMMIT_CHECKS:-0}" = "1" ] && exit 0
+
+repo_root="$(git rev-parse --show-toplevel)"
+exec "$repo_root/.review-hooks/scripts/check-commit-message.sh" "$1"

@@ -26,6 +26,7 @@ EOF
 
 repo_input="$PWD"
 profile_input="generic"
+profile_explicit=0
 force=0
 activate=1
 replace_hooks_path=0
@@ -48,6 +49,7 @@ while [ "$#" -gt 0 ]; do
         exit 2
       }
       profile_input="$2"
+      profile_explicit=1
       shift 2
       ;;
     --force)
@@ -139,6 +141,14 @@ case "$profile_input" in
     ;;
 esac
 
+# An upgrade must not silently replace repository policy. Without an explicit
+# --profile, an existing .review-hooks.conf stays as it is.
+keep_existing_profile=0
+if [ -f "$profile_dst" ] && [ "$profile_explicit" != "1" ]; then
+  keep_existing_profile=1
+  profile_src="$profile_dst"
+fi
+
 if [ ! -f "$profile_src" ]; then
   echo "[review-hooks] profile not found: $profile_src" >&2
   exit 2
@@ -203,14 +213,19 @@ mkdir -p "$runtime_dir/scripts" "$runtime_dir/review_gate" "$runtime_dir/bin" "$
 cp "$bundle_root/scripts/"*.sh "$runtime_dir/scripts/"
 cp "$bundle_root/review_gate/"*.py "$runtime_dir/review_gate/"
 cp "$bundle_root/bin/review-gate" "$runtime_dir/bin/review-gate"
-cp "$bundle_root/hooks/pre-commit" "$bundle_root/hooks/pre-push" "$hooks_dir/"
+cp "$bundle_root/hooks/pre-commit" "$bundle_root/hooks/commit-msg" "$bundle_root/hooks/pre-push" "$hooks_dir/"
 cp "$bundle_root/README.md" "$runtime_dir/README.md"
 cp "$bundle_root/VERSION" "$runtime_dir/VERSION"
-cp "$profile_src" "$profile_dst"
+if [ "$keep_existing_profile" = "1" ]; then
+  echo "[review-hooks] kept existing profile: $profile_dst"
+else
+  cp "$profile_src" "$profile_dst"
+fi
 chmod +x \
   "$runtime_dir/scripts/"*.sh \
   "$runtime_dir/bin/review-gate" \
   "$hooks_dir/pre-commit" \
+  "$hooks_dir/commit-msg" \
   "$hooks_dir/pre-push"
 
 # Stamp the installed runtime with its bundle version and source digest so

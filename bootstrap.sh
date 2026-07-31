@@ -24,6 +24,7 @@ EOF
 repo_input="$PWD"
 activate=0
 profile="generic"
+profile_explicit=0
 force_skills=0
 force_hooks=0
 replace_hooks_path=0
@@ -52,6 +53,7 @@ while [ "$#" -gt 0 ]; do
         exit 2
       }
       profile="$2"
+      profile_explicit=1
       shift 2
       ;;
     --force-skills)
@@ -139,7 +141,12 @@ fi
 "$bundle_root/install.sh" "${install_args[@]}"
 
 if [ "$activate" = "1" ]; then
-  hook_args=(--repo "$repo_root" --profile "$profile")
+  # Forward --profile only when the operator chose one, so an upgrade keeps
+  # the repository's existing .review-hooks.conf.
+  hook_args=(--repo "$repo_root")
+  if [ "$profile_explicit" = "1" ]; then
+    hook_args+=(--profile "$profile")
+  fi
   if [ "$force_hooks" = "1" ]; then
     hook_args+=(--force)
   fi

@@ -179,7 +179,7 @@ requested, activating their deterministic hardening gates:
 ```
 
 It runs a dependency capability report first, installs from the current bundle directory with drift
-protection, activates `pre-commit` and `pre-push` through `core.hooksPath`, then runs the full doctor
+protection, activates `pre-commit`, `commit-msg`, and `pre-push` through `core.hooksPath`, then runs the full doctor
 again. Omit `--activate` for install-only behavior.
 
 Plain bootstrap never installs system packages. To explicitly install missing, safely mapped core
@@ -221,6 +221,7 @@ The optional module separates deterministic commit checks from aggregate AI revi
 
 ```text
 pre-commit → staged whitespace, secret scan, configured deterministic commands
+commit-msg → configured deterministic message commands (no-op by default)
 pre-push   → configured deterministic commands → bounded aggregate AI review
 ```
 

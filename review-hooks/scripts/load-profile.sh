@@ -34,6 +34,7 @@ load_review_hooks_profile() {
 
   : "${PRE_COMMIT_SECRET_SCAN:=1}"
   : "${PRE_COMMIT_COMMANDS:=}"
+  : "${COMMIT_MSG_COMMANDS:=}"
   : "${PRE_PUSH_COMMANDS:=}"
   : "${AI_REVIEW_ENABLED:=0}"
   : "${AI_REVIEW_PRODUCT_NAME:=this repository}"

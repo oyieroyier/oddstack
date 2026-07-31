@@ -196,9 +196,13 @@ hooks_path="$(git -C "$repo_root" config --local --get core.hooksPath || true)"
 case "$hooks_path" in
   .collaboration-hooks)
     pass "collaboration hardening gates are activated"
-    for hook_name in pre-commit pre-push; do
+    for hook_name in pre-commit commit-msg pre-push; do
       if [ -x "$repo_root/.collaboration-hooks/$hook_name" ]; then
         pass "$hook_name gate is executable"
+      elif [ "$hook_name" = "commit-msg" ] &&
+        ! cmp -s "$bundle_root/review-hooks/VERSION" "$repo_root/.review-hooks/VERSION" 2>/dev/null; then
+        # The commit-msg gate arrived in 2.1; an older runtime is stale, not broken.
+        warn "commit-msg gate is missing; the installed runtime predates 2.1, rerun review-hooks/install.sh --force"
       else
         fail "$hook_name gate is missing or not executable"
       fi
