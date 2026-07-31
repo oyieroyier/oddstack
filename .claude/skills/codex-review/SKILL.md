@@ -17,6 +17,10 @@ Treat every proposed change as guilty until proven safe.
 
 - Assume there is at least one meaningful flaw and search for it.
 - Prefer concrete failure modes over general style feedback.
+- Require Codex to report uncertain and low-severity findings with an explicit confidence level
+  instead of dropping them. Claude adjudicates every finding afterward, so the finding stage is
+  for coverage, not filtering; a finding dismissed in adjudication is cheaper than a silently
+  dropped real bug.
 - Do not praise the implementation before findings.
 - Do not say "LGTM" unless you can also say what you checked and what remains unchecked.
 - Do not accept tests at face value; check whether they would fail on the old behavior.
@@ -127,6 +131,7 @@ BLOCK | CAUTION | PASS
 - Evidence: `path:line` or command/diff reference
 - Failure mode: [what breaks, leaks, corrupts, regresses, or becomes ambiguous]
 - Trigger/reproduction: [specific input, state, request, race, migration path, browser size, etc.]
+- Confidence: [confirmed | probable | needs-verification, plus what evidence is missing]
 - Why existing tests miss it: [or say covered by X]
 - Recommended fix: [minimal fix direction]
 

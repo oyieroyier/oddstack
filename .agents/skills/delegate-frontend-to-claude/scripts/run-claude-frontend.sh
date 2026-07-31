@@ -141,6 +141,8 @@ BACKLOG_BEFORE_HASH="$(git hash-object "$BACKLOG_PATH")"
     printf 'Read `%s` before any other task work. It is the source of truth for queues, checkpoints, blockers, evidence, and next owner. Update it before editing and before every yield. Preserve open tasks if capacity or execution fails. Never mark the task complete with an open Codex, Claude, or operator queue item.\n' "$BACKLOG_RELATIVE"
     printf '\nOpen tasks recorded at launch:\n\n'
     printf '%s\n' "$OPEN_BACKLOG_TASKS"
+    printf '\n## Autonomous run (runner-enforced)\n\n'
+    printf 'You are operating autonomously in a non-interactive run. Codex and the user cannot answer questions mid-task, so asking "Shall I..?" blocks the work. For reversible actions inside your ownership boundary, proceed without asking. If you are blocked by something only Codex or the operator can resolve, record the blocker and your open queue in the backlog and return your report instead of asking permission. Before ending your turn, check your last paragraph: if it is a question, a plan, or a promise about work you have not done ("I will now..."), do that work first with tool calls. End only when the slice is complete or the blocker is recorded.\n'
   } | claude --print \
       --permission-mode acceptEdits \
       --name codex-frontend-handoff

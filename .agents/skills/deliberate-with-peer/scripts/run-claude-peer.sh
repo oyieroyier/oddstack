@@ -199,6 +199,7 @@ set +e
   cat "$prompt_file"
   printf '\n\nRead `%s` as the durable deliberation record. Ground every claim against repository evidence. Return only your peer position; do not edit files. The initiating model will record and adjudicate it.\n' \
     "${deliberation_path#"$repo_root"/}"
+  printf '\nYou are running non-interactively; no one can answer questions mid-turn. Do not end on a question or a request for permission. When information is missing, state the assumption you are proceeding under, or name the missing evidence as an open unknown in your position.\n'
 } | (
   cd "$repo_root"
   claude "${claude_args[@]}"
