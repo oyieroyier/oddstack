@@ -69,11 +69,80 @@ test_install_is_inactive() {
   if "$bundle_root/install.sh" --repo "$repo" >/dev/null &&
     [ -f "$repo/.claude/skills/codex-implementation/SKILL.md" ] &&
     [ -f "$repo/.agents/skills/delegate-frontend-to-claude/SKILL.md" ] &&
+    [ -f "$repo/.agents/skills/route-codex-subagents/SKILL.md" ] &&
     [ -z "$(git -C "$repo" config --local --get core.hooksPath || true)" ]; then
     pass "install copies helpers without activating hooks"
   else
     fail "install copies helpers without activating hooks"
   fi
+}
+
+test_subagent_routing_policy_is_bounded() {
+  local skill="$bundle_root/.agents/skills/route-codex-subagents/SKILL.md"
+  local packet="$bundle_root/.agents/skills/route-codex-subagents/references/task-packet.md"
+  local tool="$bundle_root/.agents/skills/route-codex-subagents/scripts/subagent_ledger.py"
+  local ledger="$test_root/subagent-ledger.json"
+  local descendant_ledger="$test_root/subagent-descendant-ledger.json"
+  local descendant_observe_status
+  local descendant_status
+  local token
+
+  python3 "$tool" --ledger "$ledger" init --task-id task-a >/dev/null || {
+    fail "Codex subagent routing enforces durable budgets and descendant reconciliation"
+    return
+  }
+  for agent_id in /root/a /root/b /root/c; do
+    token="$(python3 "$tool" --ledger "$ledger" reserve-spawn \
+      --role explorer --model gpt-5.6-terra)" || {
+      fail "Codex subagent routing enforces durable budgets and descendant reconciliation"
+      return
+    }
+    python3 "$tool" --ledger "$ledger" settle-spawn \
+      --token "$token" --agent-id "$agent_id" >/dev/null || {
+      fail "Codex subagent routing enforces durable budgets and descendant reconciliation"
+      return
+    }
+  done
+
+  if python3 "$tool" --ledger "$ledger" reserve-spawn \
+    --role explorer --model gpt-5.6-terra >/dev/null 2>&1; then
+    fail "Codex subagent routing enforces durable budgets and descendant reconciliation"
+    return
+  fi
+  # Reopening and even mistakenly re-initializing the same ledger cannot reset usage.
+  if ! python3 "$tool" --ledger "$ledger" resume --task-id task-a |
+    grep -q '"creations": 3' ||
+    ! python3 "$tool" --ledger "$ledger" init --task-id task-a |
+      grep -q '"creations": 3' ||
+    python3 "$tool" --ledger "$test_root/missing-ledger.json" resume \
+      --task-id task-a >/dev/null 2>&1; then
+    fail "Codex subagent routing enforces durable budgets and descendant reconciliation"
+    return
+  fi
+
+  python3 "$tool" --ledger "$descendant_ledger" init --task-id task-b >/dev/null
+  token="$(python3 "$tool" --ledger "$descendant_ledger" reserve-spawn \
+    --role implementer --model gpt-5.6-terra)"
+  python3 "$tool" --ledger "$descendant_ledger" settle-spawn \
+    --token "$token" --agent-id /root/worker >/dev/null
+  python3 "$tool" --ledger "$descendant_ledger" observe-agent \
+    --agent-id /root/worker/grandchild --parent-id /root/worker >/dev/null 2>&1
+  descendant_observe_status="$?"
+  descendant_status="$(python3 "$tool" --ledger "$descendant_ledger" status)"
+  if [ "$descendant_observe_status" -ne 3 ] ||
+    ! grep -q '"status": "VIOLATED"' <<<"$descendant_status" ||
+    ! grep -q '"creations": 2' <<<"$descendant_status" ||
+    ! grep -q '"turns": 2' <<<"$descendant_status" ||
+    python3 "$tool" --ledger "$descendant_ledger" reserve-spawn \
+      --role reviewer --model gpt-5.6-sol >/dev/null 2>&1 ||
+    ! grep -q 'inspect the complete root agent tree' "$skill" ||
+    ! grep -q 'SATISFIED / UNSATISFIED / UNCERTAIN' "$skill" ||
+    ! grep -q 'Do not spawn subagents' "$packet"; then
+    fail "Codex subagent routing enforces durable budgets and descendant reconciliation"
+    return
+  fi
+
+  pass "Codex subagent routing enforces durable budgets and descendant reconciliation"
 }
 
 test_drift_refusal() {
@@ -440,6 +509,7 @@ EOF
 }
 
 test_install_is_inactive
+test_subagent_routing_policy_is_bounded
 test_drift_refusal
 test_explicit_force
 test_symlink_refusal

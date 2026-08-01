@@ -28,6 +28,7 @@ but does not activate it or change Git configuration.
 | `ui-nitpicker`                | Claude Code | Codex        | UI implementation plus optional/required Codex frontend-logic audit          |
 | `delegate-frontend-to-claude` | Codex       | Claude Code  | Backend-first delegation of a bounded frontend slice with resumable queues   |
 | `deliberate-with-peer`        | Either      | Other model  | Grounded proposals, critique, adjudication, and bounded consensus            |
+| `route-codex-subagents`       | Codex       | Codex        | Cost-aware Sol/Terra routing for explicitly requested internal delegation     |
 | `setup-collaboration-hooks`   | Codex       | —            | Safe installation, adaptation, composition, and deactivation of review hooks |
 
 ## How the two-way workflow works
@@ -377,6 +378,41 @@ Implementation, frontend delegation, code review, hooks, and every other skill r
 developer's Claude or Codex environment defaults. Explicit runner flags take precedence. Missing
 values preserve each environment's normal defaults. No fallback model is selected automatically.
 
+### Cost-aware Codex subagent routing
+
+Internal Codex delegation uses roles rather than letting each workflow choose a model independently.
+The recommended shape is a Sol primary thread, bounded Terra workers, and at most one Sol reviewer
+when risk or unresolved ambiguity warrants it:
+
+```text
+Sol primary → Terra explorer or implementer → primary verification → optional Sol review
+```
+
+Start with no more than two children, cap open child threads at three, and cap each user task at
+three primary-authorized child creations and four delegated child turns. Closing a child restores
+no budget. Persist that budget under `plans/agent-runs/` so resuming a task continues the same
+counters.
+Prohibit descendant spawning and prefer bounded context packets, while allowing justified
+full-history forks according to the active spawn contract. Reconcile the observable agent tree
+before and after child turns; an unexpected descendant is charged, violates the ledger, and stops
+further delegation. Terra workers must return an acceptance ledger; the primary rejects completion
+when any criterion is missing or uncertain. Deterministic searches and checks stay in the primary
+thread instead of consuming an agent call.
+
+Keep model and effort selection in Codex custom-agent profiles or trusted project configuration.
+Skills should request `terra_explorer`, `terra_implementer`, or `sol_reviewer` by role and remain
+independent of model pricing. Terra Medium is the implementation default; Terra Low is reserved for
+read-heavy exploration. An unavailable cheaper adapter never silently fans out into Sol children.
+
+See [Codex subagent routing architecture](docs/harness/codex-subagent-routing-architecture.md) for
+the routing seam, task packet, configuration, escalation rules, and worker return contract.
+
+The installable `route-codex-subagents` skill applies this policy when a user, `AGENTS.md`, or
+another skill explicitly requests subagents. It uses explicit Terra model/effort overrides where
+the active spawn contract permits them, tracks concurrent and cumulative fan-out, and centralizes
+the acceptance-ledger and escalation contract. Installing the bundle makes the workflow available
+without changing personal Codex model or quota settings.
+
 ## Safety and ownership
 
 - Keep the operator as the commit, push, and merge gate unless explicitly authorized otherwise.
@@ -387,6 +423,8 @@ values preserve each environment's normal defaults. No fallback model is selecte
 - Keep credentials, private data, production values, and unrelated diffs out of prompts.
 - Escalate security and money-movement blockers to a human instead of silently downgrading them.
 - Never mark a delegation complete while any model or operator queue still contains open work.
+- Do not let delegated agents spawn descendants unless a repository-specific architecture replaces
+  the default bounded routing policy.
 
 ## Portability and current assumptions
 
@@ -417,6 +455,10 @@ replacement conventions.
       delegation-backlog-template.md
       frontend-handoff-template.md
     scripts/run-claude-frontend.sh
+  route-codex-subagents/
+    SKILL.md
+    references/task-packet.md
+    scripts/subagent_ledger.py
   setup-collaboration-hooks/
     SKILL.md
 .claude/skills/

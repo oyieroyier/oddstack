@@ -1,0 +1,4 @@
+interface:
+  display_name: "Route Codex Subagents"
+  short_description: "Route bounded work to cost-aware Codex roles"
+  default_prompt: "Use $route-codex-subagents to delegate this work with bounded context, fan-out, and model cost."
