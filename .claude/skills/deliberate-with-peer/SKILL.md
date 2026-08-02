@@ -8,6 +8,12 @@ description: Deliberate on a consequential idea, architecture, implementation pl
 Run a bounded Claude–Codex deliberation. Treat the current Claude position as a hypothesis and
 require Codex to inspect repository evidence before accepting or rejecting it.
 
+This session is the initiator and runs at whatever model the window is already set to (`/model`).
+The `claude.*` preference fields never apply here—they configure Claude only when Codex calls it
+as a peer; only `codex.*` governs the peer call below. If the current session model is weaker than
+the user expects for deliberation-grade work, say so and let the user switch models before
+grounding. Record the actual initiator model and effort in the deliberation record.
+
 ## Start the record
 
 Read [references/protocol.md](references/protocol.md) and

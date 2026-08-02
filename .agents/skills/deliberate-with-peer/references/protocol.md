@@ -86,6 +86,11 @@ Supported shape:
 Explicit runner flags override the user file. Missing values preserve the CLI environment's
 defaults. Never commit personal spending preferences or credentials to a project.
 
+The model and effort fields configure peer calls only: `codex.*` when Claude initiates and calls
+Codex, `claude.*` when Codex initiates and calls Claude. The initiating session keeps its own
+environment's current model and effort—no runner can change it. Record the initiator's actual
+model instead of assuming a preference applied.
+
 Deliberation is a capability-sensitive workload, so the example pins Claude peer calls at
 `xhigh` effort per Anthropic's effort guidance. This preference only affects the peer
 runners; other skills keep the CLI environment's default effort.

@@ -8,6 +8,12 @@ description: Deliberate on a consequential idea, architecture, implementation pl
 Run a bounded Codex–Claude deliberation. Treat Claude as a grounded critic, not an oracle, and keep
 Codex responsible for checking Claude's claims against repository evidence.
 
+This session is the initiator and runs at whatever model the Codex CLI is already configured with.
+The `codex.*` preference fields never apply here—they configure Codex only when Claude calls it as
+a peer; only `claude.*` governs the peer call below. If the current session model is weaker than
+the user expects for deliberation-grade work, say so and let the user switch models before
+grounding. Record the actual initiator model and effort in the deliberation record.
+
 ## Start the record
 
 Read [references/protocol.md](references/protocol.md) and

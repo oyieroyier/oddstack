@@ -348,7 +348,8 @@ Invoke `deliberate-with-peer` from either environment:
 Use deliberate-with-peer to evaluate whether this checkout workflow belongs in the API or web shell. Ground both positions in the repository, reconcile material disagreements, and preserve the decision record.
 ```
 
-The initiator remains in its current thread. The runner starts one fresh peer session for the
+The initiator remains in its current thread, at the model and effort that environment is already
+set to. The runner starts one fresh peer session for the
 decision and resumes that exact session for at most one focused rebuttal or confirmation. Session
 ids, positions, evidence, disagreements, adjudication, and the exact resume prompt live in:
 
@@ -373,7 +374,13 @@ cp preferences.example.json ~/.config/codex-claude-skills/preferences.json
 
 The example selects Claude Fable 5/xhigh and GPT 5.6 Sol/high for peer deliberation and architecture
 work, a two-call maximum, resume-within-task sessions, Codex-authored architecture, and an `offer`
-peer-audit policy. Only the two `deliberate-with-peer` runners read the model and effort fields.
+peer-audit policy. Only the two `deliberate-with-peer` runners read the model and effort fields,
+and each field configures the peer call only: `codex.*` applies when Claude initiates and calls
+Codex, `claude.*` applies when Codex initiates and calls Claude. The initiating session always
+runs at whatever model its own CLI is currently set to—in Claude Code, the window's `/model`
+selection. Starting a deliberation from an Opus window keeps the entire Claude side on Opus; the
+preferences file never switches the initiator, and the skill will flag the mismatch rather than
+silently proceed.
 Implementation, frontend delegation, code review, hooks, and every other skill retain the
 developer's Claude or Codex environment defaults. Explicit runner flags take precedence. Missing
 values preserve each environment's normal defaults. No fallback model is selected automatically.
