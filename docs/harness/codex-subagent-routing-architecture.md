@@ -186,7 +186,9 @@ Apply these rules in order:
 4. **Use one Terra implementer** only after the primary has resolved the contract and bounded the
    write scope.
 5. **Use two workers initially** only when their tasks are independent and their write scopes are
-   disjoint; otherwise run them sequentially.
+   disjoint. Settle or tree-reconcile the first spawn reservation before reserving the second so
+   canonical ids, roles, and models cannot be paired by observation order; otherwise run them
+   sequentially.
 6. **Use Sol review** for high-risk diffs, unresolved semantic questions, or a Terra result whose
    ledger contains uncertainty. Ordinary verification stays with the primary Sol thread.
 7. **Enforce cumulative budgets.** Allow at most three `spawn_agent` calls and four delegated child
@@ -225,10 +227,16 @@ Sol primary resolves intent and contract
 The primary remains responsible for integrating results. A worker's tests and summary are evidence
 leads, not proof.
 
-The durable ledger is a versioned JSON record keyed by stable task id. It atomically reserves each
-spawn and follow-up before the call, binds successful spawn reservations to canonical agent ids,
-and records every agent later discovered in the root tree. Failed calls remain charged. A ledger in
-`VIOLATED` state refuses new reservations.
+The durable ledger is a versioned JSON record keyed by stable task id. Initialization records the
+actual canonical root plus an immutable snapshot of every pre-existing non-root agent. Schema-v1
+ledgers predate that baseline and fail closed on resume because their historical tree cannot be
+reconstructed safely. The ledger atomically reserves each spawn and follow-up before the call,
+allows only one unresolved spawn reservation, binds successful or tree-reconciled reservations to
+canonical agent ids, rejects any attempt to bind a baseline id into the current task, and records
+every newly discovered agent. After the complete tree proves that a definitively failed call
+created no child, the reservation may transition to terminal `FAILED`; its creation and turn
+charges remain consumed, but it no longer blocks the next reservation. A ledger in `VIOLATED`
+state refuses new reservations.
 
 ## Worker return contract
 

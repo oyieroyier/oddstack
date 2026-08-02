@@ -16,13 +16,24 @@ Keep tightly coupled work in the primary thread.
 
 Before spawning:
 
-1. Check active agents.
+1. Inspect the complete active agent tree. Record the canonical root agent id and snapshot every
+   existing non-root canonical agent id as the task baseline. If the surface cannot expose the
+   canonical root and complete tree, do not delegate.
 2. Set `ledger_tool` to this skill's `scripts/subagent_ledger.py` and choose a stable task slug under
    `plans/agent-runs/<task-slug>.json`. For a new workflow, initialize it once:
 
    ```bash
-   python3 "$ledger_tool" --ledger "$ledger_path" init --task-id "$task_id"
+   init_args=(--ledger "$ledger_path" init --task-id "$task_id" \
+     --root-agent "$root_agent_id")
+   for agent_id in "${existing_agent_ids[@]}"; do
+     init_args+=(--baseline-agent "$agent_id")
+   done
+   python3 "$ledger_tool" "${init_args[@]}"
    ```
+
+   Baseline agents belong to earlier tasks and are never charged to this ledger. Do not add an
+   agent to the baseline after initialization or settle a new reservation to a baseline id; reject
+   stale responses while leaving the reservation available for the actual new child.
 
    For a resumed workflow, require the existing path and run `resume`, never `init`:
 
@@ -47,9 +58,23 @@ reservation="$(python3 "$ledger_tool" --ledger "$ledger_path" reserve-spawn \
   --role "$role" --model "$model")"
 ```
 
-After a successful spawn, settle the reservation with the returned canonical agent id. Before every
-`followup_task`, reserve a turn with `reserve-turn`. A refused reservation means the primary must
-continue locally.
+Keep at most one spawn reservation unresolved. After a successful spawn, settle it with the returned
+canonical agent id before reserving another, including when starting two independent workers. If the
+spawn response or settlement is lost, inspect the tree and reconcile the newly observed direct child
+to that reservation without charging it twice. Before every `followup_task`, reserve a turn with
+`reserve-turn`. A refused reservation means the primary must continue locally.
+
+When `spawn_agent` definitively fails, inspect the complete tree first. If no child exists, close the
+reservation while retaining its creation and turn charges:
+
+```bash
+python3 "$ledger_tool" --ledger "$ledger_path" fail-spawn \
+  --token "$reservation" --tree-reconciled --reason "$failure_reason"
+```
+
+Never close a failed reservation from a CLI error alone; an unobserved child must reconcile to the
+charged reservation. Only reserve another spawn after the prior reservation is settled, reconciled,
+or terminally failed.
 
 ## Route by role
 
@@ -103,12 +128,13 @@ criterion | SATISFIED / UNSATISFIED / UNCERTAIN | file or symbol | verification 
 Also require changed or inspected paths, commands and outcomes, assumptions, remaining risks, and a
 declaration that no descendant was spawned. Treat that declaration as supplemental evidence only.
 
-Before and after every child turn, inspect the complete root agent tree. For every canonical agent
-id absent from the ledger, run `observe-agent` with its canonical parent id. This charges unexpected
-children and descendants to both cumulative counters. Any descendant marks the ledger `VIOLATED`;
-stop further delegation, reject the violating worker's result, and finish locally. If the active
-surface cannot expose the complete tree, do not claim the cumulative guarantee and do not continue
-delegating.
+Before and after every child turn, inspect the complete root agent tree. Ignore ids in the immutable
+task-start baseline. For every other canonical agent id absent from the ledger, run `observe-agent`
+with its canonical parent id. A newly observed direct child first reconciles with the single pending
+spawn reservation; otherwise unexpected children and descendants charge both cumulative counters.
+Any descendant marks the ledger `VIOLATED`; stop further delegation, reject the violating worker's
+result, and finish locally. If the active surface cannot expose the complete tree, do not claim the
+cumulative guarantee and do not continue delegating.
 
 Reject `COMPLETE` when any criterion is absent, unsatisfied, or uncertain. Inspect the relevant
 source and diff and run fresh checks in the primary thread before making completion claims.

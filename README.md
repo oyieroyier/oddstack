@@ -391,7 +391,13 @@ Sol primary → Terra explorer or implementer → primary verification → optio
 Start with no more than two children, cap open child threads at three, and cap each user task at
 three primary-authorized child creations and four delegated child turns. Closing a child restores
 no budget. Persist that budget under `plans/agent-runs/` so resuming a task continues the same
-counters.
+counters. Initialize each ledger with the active canonical root and an immutable snapshot of the
+pre-existing agent tree; ledgers from before baseline-aware schema v2 fail closed rather than
+guessing historical ownership. Baseline ids cannot settle current-task reservations. Keep only one
+spawn reservation unresolved, settling or tree-reconciling it before reserving another even when
+starting two independent workers. A
+definitively failed spawn remains charged but can be closed after complete-tree reconciliation
+confirms that no child exists, preserving retry capacity without weakening accounting.
 Prohibit descendant spawning and prefer bounded context packets, while allowing justified
 full-history forks according to the active spawn contract. Reconcile the observable agent tree
 before and after child turns; an unexpected descendant is charged, violates the ledger, and stops

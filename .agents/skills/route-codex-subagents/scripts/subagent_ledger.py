@@ -14,6 +14,8 @@ import tempfile
 from datetime import datetime, timezone
 from uuid import uuid4
 
+LEDGER_VERSION = 2
+
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -40,8 +42,19 @@ def read_state(path: Path) -> dict:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         fail(f"cannot read ledger {path}: {error}")
-    if value.get("version") != 1:
+    version = value.get("version")
+    if version == 1:
+        fail(
+            f"ledger {path} predates task-start baselines and cannot be resumed safely; "
+            "continue locally"
+        )
+    if version != LEDGER_VERSION:
         fail(f"unsupported ledger version in {path}")
+    if not isinstance(value.get("baseline_agents"), list):
+        fail(f"ledger {path} is missing a valid task-start baseline")
+    rebound = set(value["baseline_agents"]) & set(value.get("agents", {}))
+    if rebound:
+        fail(f"ledger {path} binds baseline agents into this task: {sorted(rebound)}")
     return value
 
 
@@ -74,16 +87,46 @@ def print_status(state: dict) -> None:
         json.dumps(
             {
                 "task_id": state["task_id"],
+                "root_agent": state["root_agent"],
                 "status": state["status"],
                 "creations": state["usage"]["creations"],
                 "max_creations": state["caps"]["creations"],
                 "turns": state["usage"]["turns"],
                 "max_turns": state["caps"]["turns"],
+                "baseline_agents": state["baseline_agents"],
+                "agents": state["agents"],
+                "reservations": state["reservations"],
                 "violations": state["violations"],
             },
             sort_keys=True,
         )
     )
+
+
+def settle_spawn_reservation(
+    state: dict, token: str, reservation: dict, agent_id: str, source: str
+) -> None:
+    reservation["status"] = "SETTLED"
+    reservation["agent_id"] = agent_id
+    state["agents"][agent_id] = {
+        "parent_id": state["root_agent"],
+        "role": reservation["role"],
+        "model": reservation["model"],
+        "source": source,
+    }
+
+
+def pending_spawn(state: dict) -> tuple[str, dict] | None:
+    pending = [
+        (token, reservation)
+        for token, reservation in state["reservations"].items()
+        if reservation.get("kind") == "spawn" and reservation.get("status") == "RESERVED"
+    ]
+    if len(pending) > 1:
+        fail("ledger has multiple unresolved spawn reservations and cannot reconcile safely")
+    if not pending:
+        return None
+    return pending[0]
 
 
 def init(args: argparse.Namespace) -> None:
@@ -93,22 +136,28 @@ def init(args: argparse.Namespace) -> None:
             state = read_state(path)
             if state["task_id"] != args.task_id:
                 fail(f"ledger belongs to task {state['task_id']}, not {args.task_id}")
+            if state["root_agent"] != args.root_agent:
+                fail(f"ledger root is {state['root_agent']}, not {args.root_agent}")
+            if set(state["baseline_agents"]) != set(args.baseline_agent):
+                fail("ledger baseline differs; resume the existing task instead of reinitializing it")
             print_status(state)
             return
+        baseline_agents = sorted(set(args.baseline_agent) - {args.root_agent})
         state = {
-            "version": 1,
+            "version": LEDGER_VERSION,
             "task_id": args.task_id,
             "root_agent": args.root_agent,
             "status": "ACTIVE",
             "caps": {"creations": args.max_creations, "turns": args.max_turns},
             "usage": {"creations": 0, "turns": 0},
+            "baseline_agents": baseline_agents,
             "agents": {},
             "reservations": {},
             "violations": [],
             "events": [],
             "created_at": now(),
         }
-        event(state, "initialized")
+        event(state, "initialized", root_agent=args.root_agent, baseline_agents=baseline_agents)
         write_state(path, state)
         print_status(state)
 
@@ -126,6 +175,8 @@ def reserve_spawn(args: argparse.Namespace) -> None:
     with locked(args.ledger):
         state = read_state(args.ledger)
         ensure_active(state)
+        if pending_spawn(state):
+            fail("settle or reconcile the unresolved spawn before reserving another")
         if state["usage"]["creations"] >= state["caps"]["creations"]:
             fail("child-creation budget is exhausted")
         if state["usage"]["turns"] >= state["caps"]["turns"]:
@@ -151,19 +202,47 @@ def settle_spawn(args: argparse.Namespace) -> None:
         reservation = state["reservations"].get(args.token)
         if not reservation or reservation.get("kind") != "spawn":
             fail(f"unknown spawn reservation: {args.token}")
+        if args.agent_id in state["baseline_agents"]:
+            fail(f"cannot settle a spawn to baseline agent: {args.agent_id}")
         if reservation["status"] != "RESERVED":
+            if reservation["status"] == "SETTLED" and reservation.get("agent_id") == args.agent_id:
+                print_status(state)
+                return
             fail(f"spawn reservation is already {reservation['status']}: {args.token}")
         if args.agent_id in state["agents"]:
             fail(f"agent is already recorded: {args.agent_id}")
-        reservation["status"] = "SETTLED"
-        reservation["agent_id"] = args.agent_id
-        state["agents"][args.agent_id] = {
-            "parent_id": state["root_agent"],
-            "role": reservation["role"],
-            "model": reservation["model"],
-            "source": "reserved",
-        }
+        settle_spawn_reservation(state, args.token, reservation, args.agent_id, "reserved")
         event(state, "spawn_settled", token=args.token, agent_id=args.agent_id)
+        write_state(args.ledger, state)
+        print_status(state)
+
+
+def fail_spawn(args: argparse.Namespace) -> None:
+    with locked(args.ledger):
+        state = read_state(args.ledger)
+        ensure_active(state)
+        reservation = state["reservations"].get(args.token)
+        if not reservation or reservation.get("kind") != "spawn":
+            fail(f"unknown spawn reservation: {args.token}")
+        reason = args.reason.strip()
+        if not reason:
+            fail("failed spawn reason must be non-empty")
+        if not args.tree_reconciled:
+            fail("reconcile the complete agent tree before closing a failed spawn")
+        if reservation["status"] != "RESERVED":
+            if (
+                reservation["status"] == "FAILED"
+                and reservation.get("reason") == reason
+                and reservation.get("tree_reconciled") is True
+            ):
+                print_status(state)
+                return
+            fail(f"spawn reservation is already {reservation['status']}: {args.token}")
+        reservation["status"] = "FAILED"
+        reservation["reason"] = reason
+        reservation["tree_reconciled"] = True
+        reservation["failed_at"] = now()
+        event(state, "spawn_failed", token=args.token, reason=reason, tree_reconciled=True)
         write_state(args.ledger, state)
         print_status(state)
 
@@ -193,6 +272,26 @@ def observe_agent(args: argparse.Namespace) -> None:
         if args.agent_id in state["agents"]:
             print_status(state)
             return
+        if args.agent_id in state["baseline_agents"]:
+            print_status(state)
+            return
+        if args.parent_id == state["root_agent"]:
+            pending = pending_spawn(state)
+            if pending:
+                token, reservation = pending
+                settle_spawn_reservation(
+                    state, token, reservation, args.agent_id, "observed_reserved"
+                )
+                event(
+                    state,
+                    "spawn_reconciled",
+                    token=token,
+                    agent_id=args.agent_id,
+                    parent_id=args.parent_id,
+                )
+                write_state(args.ledger, state)
+                print_status(state)
+                return
         state["usage"]["creations"] += 1
         state["usage"]["turns"] += 1
         state["agents"][args.agent_id] = {
@@ -236,7 +335,8 @@ def parser() -> argparse.ArgumentParser:
 
     init_command = commands.add_parser("init")
     init_command.add_argument("--task-id", required=True)
-    init_command.add_argument("--root-agent", default="/root")
+    init_command.add_argument("--root-agent", required=True)
+    init_command.add_argument("--baseline-agent", action="append", default=[])
     init_command.add_argument("--max-creations", type=int, default=3)
     init_command.add_argument("--max-turns", type=int, default=4)
     init_command.set_defaults(run=init)
@@ -254,6 +354,12 @@ def parser() -> argparse.ArgumentParser:
     settle_command.add_argument("--token", required=True)
     settle_command.add_argument("--agent-id", required=True)
     settle_command.set_defaults(run=settle_spawn)
+
+    fail_command = commands.add_parser("fail-spawn")
+    fail_command.add_argument("--token", required=True)
+    fail_command.add_argument("--reason", required=True)
+    fail_command.add_argument("--tree-reconciled", action="store_true")
+    fail_command.set_defaults(run=fail_spawn)
 
     turn_command = commands.add_parser("reserve-turn")
     turn_command.add_argument("--agent-id", required=True)

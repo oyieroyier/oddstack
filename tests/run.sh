@@ -87,7 +87,7 @@ test_subagent_routing_policy_is_bounded() {
   local descendant_status
   local token
 
-  python3 "$tool" --ledger "$ledger" init --task-id task-a >/dev/null || {
+  python3 "$tool" --ledger "$ledger" init --task-id task-a --root-agent /root >/dev/null || {
     fail "Codex subagent routing enforces durable budgets and descendant reconciliation"
     return
   }
@@ -112,7 +112,7 @@ test_subagent_routing_policy_is_bounded() {
   # Reopening and even mistakenly re-initializing the same ledger cannot reset usage.
   if ! python3 "$tool" --ledger "$ledger" resume --task-id task-a |
     grep -q '"creations": 3' ||
-    ! python3 "$tool" --ledger "$ledger" init --task-id task-a |
+    ! python3 "$tool" --ledger "$ledger" init --task-id task-a --root-agent /root |
       grep -q '"creations": 3' ||
     python3 "$tool" --ledger "$test_root/missing-ledger.json" resume \
       --task-id task-a >/dev/null 2>&1; then
@@ -120,7 +120,7 @@ test_subagent_routing_policy_is_bounded() {
     return
   fi
 
-  python3 "$tool" --ledger "$descendant_ledger" init --task-id task-b >/dev/null
+  python3 "$tool" --ledger "$descendant_ledger" init --task-id task-b --root-agent /root >/dev/null
   token="$(python3 "$tool" --ledger "$descendant_ledger" reserve-spawn \
     --role implementer --model gpt-5.6-terra)"
   python3 "$tool" --ledger "$descendant_ledger" settle-spawn \
@@ -143,6 +143,246 @@ test_subagent_routing_policy_is_bounded() {
   fi
 
   pass "Codex subagent routing enforces durable budgets and descendant reconciliation"
+}
+
+test_subagent_ledger_requires_canonical_root() {
+  local tool="$bundle_root/.agents/skills/route-codex-subagents/scripts/subagent_ledger.py"
+  local root_ledger="$test_root/subagent-root-ledger.json"
+  local status
+
+  if python3 "$tool" --ledger "$root_ledger" init --task-id missing-root >/dev/null 2>&1; then
+    fail "Codex subagent ledger requires and honors the canonical root agent"
+    return
+  fi
+
+  python3 "$tool" --ledger "$root_ledger" init --task-id custom-root \
+    --root-agent /session/root >/dev/null
+  python3 "$tool" --ledger "$root_ledger" observe-agent \
+    --agent-id /session/root/direct --parent-id /session/root >/dev/null || {
+    fail "Codex subagent ledger requires and honors the canonical root agent"
+    return
+  }
+  status="$(python3 "$tool" --ledger "$root_ledger" status)"
+  if ! grep -q '"creations": 1' <<<"$status" ||
+    ! grep -q '"status": "ACTIVE"' <<<"$status"; then
+    fail "Codex subagent ledger requires and honors the canonical root agent"
+    return
+  fi
+
+  pass "Codex subagent ledger requires and honors the canonical root agent"
+}
+
+test_subagent_ledger_baselines_historical_agents() {
+  local tool="$bundle_root/.agents/skills/route-codex-subagents/scripts/subagent_ledger.py"
+  local ledger="$test_root/subagent-baseline-ledger.json"
+  local status
+
+  python3 "$tool" --ledger "$ledger" init --task-id baseline \
+    --root-agent /session/root \
+    --baseline-agent /session/root/old-worker \
+    --baseline-agent /session/root/old-worker/descendant >/dev/null || {
+    fail "Codex subagent ledger does not charge historical baseline agents"
+    return
+  }
+  python3 "$tool" --ledger "$ledger" observe-agent \
+    --agent-id /session/root/old-worker --parent-id /session/root >/dev/null || {
+    fail "Codex subagent ledger does not charge historical baseline agents"
+    return
+  }
+  python3 "$tool" --ledger "$ledger" observe-agent \
+    --agent-id /session/root/old-worker/descendant \
+    --parent-id /session/root/old-worker >/dev/null || {
+    fail "Codex subagent ledger does not charge historical baseline agents"
+    return
+  }
+  status="$(python3 "$tool" --ledger "$ledger" status)"
+  if ! grep -q '"version": 2' "$ledger" ||
+    ! grep -q '"root_agent": "/session/root"' <<<"$status" ||
+    ! grep -q '"creations": 0' <<<"$status" ||
+    ! grep -q '"turns": 0' <<<"$status" ||
+    ! grep -q '"status": "ACTIVE"' <<<"$status" ||
+    python3 "$tool" --ledger "$ledger" init --task-id baseline \
+      --root-agent /session/root \
+      --baseline-agent /session/root/old-worker \
+      --baseline-agent /session/root/old-worker/descendant \
+      --baseline-agent /session/root/new-worker >/dev/null 2>&1; then
+    fail "Codex subagent ledger does not charge historical baseline agents"
+    return
+  fi
+
+  pass "Codex subagent ledger does not charge historical baseline agents"
+}
+
+test_subagent_ledger_rejects_baseline_spawn_settlement() {
+  local tool="$bundle_root/.agents/skills/route-codex-subagents/scripts/subagent_ledger.py"
+  local ledger="$test_root/subagent-baseline-settlement-ledger.json"
+  local token
+
+  python3 "$tool" --ledger "$ledger" init --task-id baseline-settlement \
+    --root-agent /session/root \
+    --baseline-agent /session/root/old-worker >/dev/null
+  token="$(python3 "$tool" --ledger "$ledger" reserve-spawn \
+    --role explorer --model gpt-5.6-terra)"
+  if python3 "$tool" --ledger "$ledger" settle-spawn \
+    --token "$token" --agent-id /session/root/old-worker >/dev/null 2>&1; then
+    fail "Codex subagent ledger rejects baseline ids during spawn settlement"
+    return
+  fi
+  if ! python3 - "$ledger" "$token" <<'PY'
+import json
+import sys
+
+ledger, token = sys.argv[1:]
+state = json.loads(open(ledger, encoding="utf-8").read())
+assert "/session/root/old-worker" not in state["agents"]
+assert state["reservations"][token]["status"] == "RESERVED"
+assert state["usage"] == {"creations": 1, "turns": 1}
+PY
+  then
+    fail "Codex subagent ledger rejects baseline ids during spawn settlement"
+    return
+  fi
+  python3 "$tool" --ledger "$ledger" settle-spawn \
+    --token "$token" --agent-id /session/root/new-worker >/dev/null || {
+    fail "Codex subagent ledger rejects baseline ids during spawn settlement"
+    return
+  }
+
+  pass "Codex subagent ledger rejects baseline ids during spawn settlement"
+}
+
+test_subagent_ledger_reconciles_pending_spawn() {
+  local tool="$bundle_root/.agents/skills/route-codex-subagents/scripts/subagent_ledger.py"
+  local ledger="$test_root/subagent-pending-ledger.json"
+  local pending_token
+  local status
+  local token
+
+  python3 "$tool" --ledger "$ledger" init --task-id pending \
+    --root-agent /session/root >/dev/null
+  for agent_id in /session/root/one /session/root/two; do
+    token="$(python3 "$tool" --ledger "$ledger" reserve-spawn \
+      --role explorer --model gpt-5.6-terra)"
+    python3 "$tool" --ledger "$ledger" settle-spawn \
+      --token "$token" --agent-id "$agent_id" >/dev/null
+  done
+  pending_token="$(python3 "$tool" --ledger "$ledger" reserve-spawn \
+    --role explorer --model gpt-5.6-terra)"
+  python3 "$tool" --ledger "$ledger" observe-agent \
+    --agent-id /session/root/recovered --parent-id /session/root >/dev/null || {
+    fail "Codex subagent ledger reconciles an observed child with its pending spawn"
+    return
+  }
+  # A delayed spawn response may still attempt the original settlement; it is idempotent.
+  python3 "$tool" --ledger "$ledger" settle-spawn \
+    --token "$pending_token" --agent-id /session/root/recovered >/dev/null || {
+    fail "Codex subagent ledger reconciles an observed child with its pending spawn"
+    return
+  }
+  status="$(python3 "$tool" --ledger "$ledger" status)"
+  if ! grep -q '"creations": 3' <<<"$status" ||
+    ! grep -q '"turns": 3' <<<"$status" ||
+    ! grep -q '"status": "ACTIVE"' <<<"$status" ||
+    ! grep -q '"agent_id": "/session/root/recovered"' <<<"$status" ||
+    grep -q '"status": "PENDING"' <<<"$status" ||
+    [ -z "$pending_token" ]; then
+    fail "Codex subagent ledger reconciles an observed child with its pending spawn"
+    return
+  fi
+
+  pass "Codex subagent ledger reconciles an observed child with its pending spawn"
+}
+
+test_subagent_ledger_rejects_multiple_pending_spawns() {
+  local tool="$bundle_root/.agents/skills/route-codex-subagents/scripts/subagent_ledger.py"
+  local ledger="$test_root/subagent-multiple-pending-ledger.json"
+  local status
+
+  python3 "$tool" --ledger "$ledger" init --task-id multiple-pending \
+    --root-agent /session/root >/dev/null
+  python3 "$tool" --ledger "$ledger" reserve-spawn \
+    --role explorer --model gpt-5.6-terra >/dev/null
+  if python3 "$tool" --ledger "$ledger" reserve-spawn \
+    --role implementer --model gpt-5.6-terra >/dev/null 2>&1; then
+    fail "Codex subagent ledger permits only one unresolved spawn reservation"
+    return
+  fi
+  status="$(python3 "$tool" --ledger "$ledger" status)"
+  if ! grep -q '"creations": 1' <<<"$status" ||
+    ! grep -q '"turns": 1' <<<"$status" ||
+    ! grep -q '"status": "ACTIVE"' <<<"$status"; then
+    fail "Codex subagent ledger permits only one unresolved spawn reservation"
+    return
+  fi
+
+  pass "Codex subagent ledger permits only one unresolved spawn reservation"
+}
+
+test_subagent_ledger_closes_charged_failed_spawn() {
+  local tool="$bundle_root/.agents/skills/route-codex-subagents/scripts/subagent_ledger.py"
+  local ledger="$test_root/subagent-failed-spawn-ledger.json"
+  local failed_token
+  local next_token
+  local status
+
+  python3 "$tool" --ledger "$ledger" init --task-id failed-spawn \
+    --root-agent /session/root >/dev/null
+  failed_token="$(python3 "$tool" --ledger "$ledger" reserve-spawn \
+    --role explorer --model gpt-5.6-terra)"
+  if python3 "$tool" --ledger "$ledger" fail-spawn \
+    --token "$failed_token" --reason "CLI rejected the spawn" >/dev/null 2>&1; then
+    fail "Codex subagent ledger closes charged failed spawns after tree reconciliation"
+    return
+  fi
+  python3 "$tool" --ledger "$ledger" fail-spawn \
+    --token "$failed_token" --reason "CLI rejected the spawn" \
+    --tree-reconciled >/dev/null || {
+    fail "Codex subagent ledger closes charged failed spawns after tree reconciliation"
+    return
+  }
+  next_token="$(python3 "$tool" --ledger "$ledger" reserve-spawn \
+    --role implementer --model gpt-5.6-terra)" || {
+    fail "Codex subagent ledger closes charged failed spawns after tree reconciliation"
+    return
+  }
+  status="$(python3 "$tool" --ledger "$ledger" status)"
+  if ! grep -q '"creations": 2' <<<"$status" ||
+    ! grep -q '"turns": 2' <<<"$status" ||
+    ! grep -q '"status": "FAILED"' <<<"$status" ||
+    ! grep -q '"tree_reconciled": true' <<<"$status" ||
+    [ -z "$next_token" ]; then
+    fail "Codex subagent ledger closes charged failed spawns after tree reconciliation"
+    return
+  fi
+
+  pass "Codex subagent ledger closes charged failed spawns after tree reconciliation"
+}
+
+test_subagent_ledger_rejects_prebaseline_schema() {
+  local tool="$bundle_root/.agents/skills/route-codex-subagents/scripts/subagent_ledger.py"
+  local ledger="$test_root/subagent-legacy-ledger.json"
+
+  cat >"$ledger" <<'EOF'
+{
+  "version": 1,
+  "task_id": "legacy",
+  "root_agent": "/root",
+  "status": "ACTIVE",
+  "caps": {"creations": 3, "turns": 4},
+  "usage": {"creations": 0, "turns": 0},
+  "agents": {},
+  "reservations": {},
+  "violations": [],
+  "events": []
+}
+EOF
+
+  if python3 "$tool" --ledger "$ledger" resume --task-id legacy >/dev/null 2>&1; then
+    fail "Codex subagent ledger rejects schemas that predate task baselines"
+    return
+  fi
+
+  pass "Codex subagent ledger rejects schemas that predate task baselines"
 }
 
 test_drift_refusal() {
@@ -510,6 +750,13 @@ EOF
 
 test_install_is_inactive
 test_subagent_routing_policy_is_bounded
+test_subagent_ledger_requires_canonical_root
+test_subagent_ledger_baselines_historical_agents
+test_subagent_ledger_rejects_baseline_spawn_settlement
+test_subagent_ledger_reconciles_pending_spawn
+test_subagent_ledger_rejects_multiple_pending_spawns
+test_subagent_ledger_closes_charged_failed_spawn
+test_subagent_ledger_rejects_prebaseline_schema
 test_drift_refusal
 test_explicit_force
 test_symlink_refusal
