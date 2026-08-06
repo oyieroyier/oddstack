@@ -57,7 +57,9 @@ cp \
   "$expected_root/"
 
 # Local Python runs may leave bytecode caches; they never belong in a release.
-find "$expected_root" \( -name __pycache__ -o -name '*.pyc' \) -exec rm -rf {} +
+find "$expected_root" \
+  \( -name __pycache__ -o -name '*.pyc' -o -name .pytest_cache \) \
+  -exec rm -rf {} +
 
 tar_path="$bundle_root/codex-claude-skills.tar.gz"
 zip_path="$bundle_root/codex-claude-skills.zip"

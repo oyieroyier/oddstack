@@ -696,7 +696,7 @@ test_spend_ledger_settles_to_actual_spend() {
   local repo
   repo="$(new_repo spend-ledger)"
 
-  if PYTHONPATH="$bundle_root/review-hooks" python3 - "$repo" <<'EOF'
+  if PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$bundle_root/review-hooks" python3 - "$repo" <<'EOF'
 import sys
 
 from review_gate.adapter import ClaudeAdapter
@@ -748,6 +748,15 @@ EOF
   fi
 }
 
+test_release_archives_contain_no_tool_caches() {
+  if tar -tzf "$bundle_root/codex-claude-skills.tar.gz" \
+      | grep -Eq '__pycache__|\.pytest_cache|\.pyc$'; then
+    fail "release archives contain no tool caches"
+  else
+    pass "release archives contain no tool caches"
+  fi
+}
+
 test_install_is_inactive
 test_subagent_routing_policy_is_bounded
 test_subagent_ledger_requires_canonical_root
@@ -772,6 +781,7 @@ test_dependency_install_is_explicit_and_dry_runnable
 test_missing_model_clis_are_manual_capabilities
 test_deliberation_preferences_and_alerts_stay_scoped
 test_spend_ledger_settles_to_actual_spend
+test_release_archives_contain_no_tool_caches
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures of $tests tests failed" >&2
