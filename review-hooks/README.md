@@ -145,13 +145,21 @@ it the parsed result on **stdin** as JSON:
 {
   "payload_schema_version": 1,
   "run_id": "<evidence run id>",
-  "started_utc": "2026-08-06T14:23:05Z",
-  "base": "<reviewed base sha>",
+  "started_utc": "<ISO-8601 timestamp>",
+  "base": "<aggregate base sha>",
   "head": "<reviewed head sha>",
   "verdict": "MERGE-WITH-FIXES",
   "risk_class": "general",
-  "findings": [{"severity": "SHOULD-FIX", "file": "...", "line": 1,
-                "trigger": "...", "consequence": "...", "fix": "..."}],
+  "findings": [
+    {
+      "severity": "SHOULD-FIX",
+      "file": "...",
+      "line": 1,
+      "trigger": "...",
+      "consequence": "...",
+      "fix": "..."
+    }
+  ],
   "limitations": []
 }
 ```
@@ -161,9 +169,13 @@ what the command has to work with, and it must be enough to write the consumer's
 now rather than waiting for a later review. `run_id` and `started_utc` are the same values the
 finalized run will carry, so a consumer can mint durable identifiers that match what a later scrape
 of `ai-reviews/runs/` would produce. Raw reviewer prose is never included: it is untrusted model
-output, and every field above is schema-validated first. The finding set is complete — reviewer
-output is already bounded by `AI_REVIEW_MAX_OUTPUT_BYTES`, so intake never re-caps it and never
-omits an accepted finding.
+output, and every field above is schema-validated first.
+
+The payload always includes the complete validated finding list. `AI_REVIEW_MAX_PRIOR_REPORT_BYTES`
+limits prior findings carried into a later review prompt and does **not** bound updater stdin; an
+earlier revision wrongly reused it here and dropped accepted findings from the artifact intake
+exists to produce. The source reviewer result is independently bounded by
+`AI_REVIEW_MAX_OUTPUT_BYTES`, which is the practical ceiling to size an updater against.
 
 `CATALOG_COMMIT` is also exported with the same value as `AI_REVIEW_HEAD_COMMIT`. It is the
 pre-2.2.0 name, kept for one release so an existing updater does not silently receive an empty
