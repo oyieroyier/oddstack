@@ -978,6 +978,48 @@ class TestIncrementalState(GateTestCase):
         self.assertEqual(record["review_from"], base)
         self.assertFalse(record["incremental"])
 
+    def test_template_text_change_discards_incremental_state(self):
+        fake = self.write_fake_bin(result_script(SAFE_RESULT))
+        self.write_profile(fake)
+        base = self.git_out("rev-parse", "HEAD")
+        head1 = self.commit_change()
+        self.assertEqual(
+            self.run_gate("review", "--base", base, "--head", head1).returncode,
+            0,
+        )
+
+        # An unmodified copy of the runtime still inherits the coverage.
+        copy_root = os.path.join(self.root, "state-gate-copy")
+        shutil.copytree(
+            MODULE_ROOT,
+            copy_root,
+            ignore=shutil.ignore_patterns("__pycache__", "tests"),
+        )
+        copy_gate = os.path.join(copy_root, "bin", "review-gate")
+        head2 = self.commit_change("more.txt", "more\n", "More")
+        unchanged = self.run_gate(
+            "review", "--base", base, "--head", head2, gate=copy_gate
+        )
+        self.assertEqual(unchanged.returncode, 0, unchanged.stderr)
+        record = self.latest_run_record()
+        self.assertEqual(record["review_from"], head1)
+        self.assertTrue(record["incremental"])
+
+        # Editing the prompt template changes what the reviewer is asked to
+        # look for, so coverage of base..head2 must not be inherited: the
+        # follow-up reviews the full range under the new template.
+        prompts_path = os.path.join(copy_root, "review_gate", "prompts.py")
+        with open(prompts_path, "a", encoding="utf-8") as handle:
+            handle.write("\n# template edited by incremental state test\n")
+        head3 = self.commit_change("third.txt", "third\n", "Third")
+        edited = self.run_gate(
+            "review", "--base", base, "--head", head3, gate=copy_gate
+        )
+        self.assertEqual(edited.returncode, 0, edited.stderr)
+        record = self.latest_run_record()
+        self.assertEqual(record["review_from"], base)
+        self.assertFalse(record["incremental"])
+
     def test_damaged_state_is_ignored(self):
         fake = self.write_fake_bin(result_script(SAFE_RESULT))
         self.write_profile(fake)

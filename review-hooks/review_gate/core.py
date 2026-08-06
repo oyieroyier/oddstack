@@ -533,6 +533,13 @@ class Gate:
             and state.get("policy_hash") == policy_hash
             and state.get("prompt_template_version")
             == policy.prompt_template_version
+            # The template *text* decides what the reviewer was asked to
+            # look for, so incremental coverage must bind to it exactly as
+            # the decision cache does. Binding to the version alone would
+            # let an edited template inherit coverage of base..state.head
+            # that was produced under the old questions.
+            and state.get("prompt_fingerprint")
+            == prompts.template_fingerprint()
             and state.get("reviewer_identity") == identity
             and gitwork.is_valid_sha(state.get("head", ""))
             and state["head"] != target.head
@@ -772,6 +779,7 @@ class Gate:
             "head": target.head,
             "policy_hash": policy_hash,
             "prompt_template_version": policy.prompt_template_version,
+            "prompt_fingerprint": prompts.template_fingerprint(),
             "reviewer_identity": identity,
             "report_path": report_path,
             "report_digest": report_digest,
