@@ -256,11 +256,16 @@ so their removal can be reviewed and committed normally.
 
 ## Verify
 
+Run from the bundle root; this single command covers syntax checks, both test suites (including
+the Python `unittest discover` run), and the archive check:
+
 ```bash
-bash -n review-hooks/install.sh
-bash -n review-hooks/hooks/*
-bash -n review-hooks/scripts/*.sh
-bash -n review-hooks/bin/review-gate
-review-hooks/tests/run.sh
-python3 -m unittest discover -s review-hooks/tests -p 'test_*.py'
+bash tests/run-all.sh
+```
+
+The hooks suite alone (including its Python `unittest discover` run) can still be run in
+isolation:
+
+```bash
+bash review-hooks/tests/run.sh
 ```
