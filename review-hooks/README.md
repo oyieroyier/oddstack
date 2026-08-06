@@ -152,8 +152,6 @@ it the parsed result on **stdin** as JSON:
   "risk_class": "general",
   "findings": [{"severity": "SHOULD-FIX", "file": "...", "line": 1,
                 "trigger": "...", "consequence": "...", "fix": "..."}],
-  "findings_total": 1,
-  "truncated": false,
   "limitations": []
 }
 ```

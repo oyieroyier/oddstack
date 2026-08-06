@@ -160,8 +160,6 @@ class TestDurableMergeWithFixesIntake(GateTestCase):
         self.assertEqual(payload["base"], base)
         self.assertEqual(payload["verdict"], "MERGE-WITH-FIXES")
         self.assertEqual(payload["risk_class"], "general")
-        self.assertFalse(payload["truncated"])
-        self.assertEqual(payload["findings_total"], 1)
 
         # The run id is known before evidence is finalized, so a consumer can
         # mint durable finding ids now that match the ones a later scrape of
@@ -241,8 +239,6 @@ class TestDurableMergeWithFixesIntake(GateTestCase):
         # intake with the unrelated prior-report budget would drop accepted
         # findings from the tracked artifact, which is the one thing intake
         # exists to prevent.
-        self.assertFalse(payload["truncated"])
-        self.assertEqual(payload["findings_total"], 40)
         self.assertEqual(len(payload["findings"]), 40)
 
     def test_fresh_merge_with_fixes_updates_intake_before_cache(self):

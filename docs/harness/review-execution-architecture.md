@@ -365,9 +365,8 @@ with the same value for one release, so an updater written against the pre-2.2.0
 silently receive an empty commit. Because intake precedes finalization the run's report does not
 yet exist, so that payload is the only material the command has and must suffice to write a tracked
 artifact immediately; carrying the run id and start time lets a consumer mint durable identifiers
-that match the finalized run. Raw reviewer text is never included. The finding set is never
-truncated — reviewer output is already bounded by the output cap, and re-capping intake would drop
-accepted findings from the artifact intake exists to produce. It
+that match the finalized run. Raw reviewer text is never included. The finding set is always complete — reviewer output is already bounded by the output cap, and
+re-capping intake would drop accepted findings from the artifact intake exists to produce. It
 must succeed before review evidence is finalized and before the decision cache or incremental
 branch state is written; evidence is finalized exactly once, with the terminal outcome. The
 command is bounded by both a 60-second cap and the remaining run deadline and runs in a supervised

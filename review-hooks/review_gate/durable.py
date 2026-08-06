@@ -42,8 +42,6 @@ def build_payload(head, result, *, run_id, started_utc, base):
         "verdict": result.verdict,
         "risk_class": result.risk_class,
         "findings": list(result.findings),
-        "findings_total": len(result.findings),
-        "truncated": False,
         "limitations": result.limitations,
     }
     return json.dumps(payload, indent=2, sort_keys=True)
