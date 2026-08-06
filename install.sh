@@ -103,7 +103,7 @@ for index in "${!sources[@]}"; do
   if [ -L "$dst" ]; then
     drift_found=1
     echo "[skills] refusing to write through symlinked destination: $label" >&2
-  elif [ -e "$dst" ] && ! diff -qr "$src" "$dst" >/dev/null; then
+  elif [ -e "$dst" ] && ! diff -qr -x '__pycache__' -x '*.pyc' -x '.pytest_cache' "$src" "$dst" >/dev/null; then
     drift_found=1
     echo "[skills] drift detected in $label" >&2
     diff -ru "$dst" "$src" >&2 || true
@@ -127,13 +127,15 @@ for index in "${!sources[@]}"; do
   dst="${destinations[$index]}"
   label="${labels[$index]}"
 
-  if [ -e "$dst" ] && diff -qr "$src" "$dst" >/dev/null; then
+  if [ -e "$dst" ] && diff -qr -x '__pycache__' -x '*.pyc' -x '.pytest_cache' "$src" "$dst" >/dev/null; then
     echo "[skills] unchanged: $label"
     continue
   fi
 
   mkdir -p "$dst"
   cp -R "$src"/. "$dst"/
+  find "$dst" \( -name __pycache__ -o -name '*.pyc' -o -name .pytest_cache \) \
+    -exec rm -rf {} + 2>/dev/null || true
   if [ -e "$dst" ]; then
     echo "[skills] installed: $label"
   fi
