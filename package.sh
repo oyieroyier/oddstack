@@ -36,10 +36,17 @@ trap 'rm -rf "$work_root"' EXIT
 package_name="codex-claude-skills"
 expected_root="$work_root/expected/$package_name"
 
-mkdir -p "$expected_root"
+mkdir -p "$expected_root" "$expected_root/.agents" "$expected_root/.claude"
+# Only the skills trees are bundle content. Copying .agents/ and .claude/
+# wholesale sweeps in whatever local tooling puts there — agent worktrees,
+# session state, personal settings — none of which belongs in a release.
 cp -R \
-  "$bundle_root/.agents" \
-  "$bundle_root/.claude" \
+  "$bundle_root/.agents/skills" \
+  "$expected_root/.agents/"
+cp -R \
+  "$bundle_root/.claude/skills" \
+  "$expected_root/.claude/"
+cp -R \
   "$bundle_root/docs" \
   "$bundle_root/review-hooks" \
   "$bundle_root/scripts" \

@@ -757,6 +757,30 @@ test_release_archives_contain_no_tool_caches() {
   fi
 }
 
+test_release_archives_contain_only_bundle_content() {
+  local listing
+  listing="$(tar -tzf "$bundle_root/codex-claude-skills.tar.gz")"
+
+  # package.sh --check only proves the archive matches the working tree, so
+  # it cannot catch local tooling leaking into the bundle. Assert the shape
+  # directly: no agent worktrees, no nested release archives, no VCS state.
+  if printf '%s\n' "$listing" | grep -Eq 'worktrees/|codex-claude-skills\.(tar\.gz|zip)$|(^|/)\.git/'; then
+    fail "release archives contain only bundle content"
+    printf '%s\n' "$listing" \
+      | grep -E 'worktrees/|codex-claude-skills\.(tar\.gz|zip)$|(^|/)\.git/' \
+      | head -5 >&2
+  elif [ -n "$(printf '%s\n' "$listing" \
+      | sed -n 's|^codex-claude-skills/\.\(claude\|agents\)/\([^/]*\).*|\2|p' \
+      | sort -u | grep -v '^skills$')" ]; then
+    fail "release archives contain only bundle content"
+    printf '%s\n' "$listing" \
+      | sed -n 's|^codex-claude-skills/\.\(claude\|agents\)/\([^/]*\).*|\2|p' \
+      | sort -u | grep -v '^skills$' >&2
+  else
+    pass "release archives contain only bundle content"
+  fi
+}
+
 test_install_is_inactive
 test_subagent_routing_policy_is_bounded
 test_subagent_ledger_requires_canonical_root
@@ -782,6 +806,7 @@ test_missing_model_clis_are_manual_capabilities
 test_deliberation_preferences_and_alerts_stay_scoped
 test_spend_ledger_settles_to_actual_spend
 test_release_archives_contain_no_tool_caches
+test_release_archives_contain_only_bundle_content
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures of $tests tests failed" >&2
