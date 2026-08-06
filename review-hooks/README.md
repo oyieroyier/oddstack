@@ -144,6 +144,9 @@ it the parsed result on **stdin** as JSON:
 ```json
 {
   "payload_schema_version": 1,
+  "run_id": "<evidence run id>",
+  "started_utc": "2026-08-06T14:23:05Z",
+  "base": "<reviewed base sha>",
   "head": "<reviewed head sha>",
   "verdict": "MERGE-WITH-FIXES",
   "risk_class": "general",
@@ -156,10 +159,17 @@ it the parsed result on **stdin** as JSON:
 ```
 
 Intake runs before evidence is finalized, so the run's report does not exist yet — this payload is
-what the command has to work with. Raw reviewer prose is never included: it is untrusted model
-output, and every field above is schema-validated first. If the serialized payload would exceed
-`AI_REVIEW_MAX_PRIOR_REPORT_BYTES`, findings are dropped from the end and `truncated` is `true`
-with `findings_total` giving the real count. The
+what the command has to work with, and it must be enough to write the consumer's tracked artifact
+now rather than waiting for a later review. `run_id` and `started_utc` are the same values the
+finalized run will carry, so a consumer can mint durable identifiers that match what a later scrape
+of `ai-reviews/runs/` would produce. Raw reviewer prose is never included: it is untrusted model
+output, and every field above is schema-validated first. The finding set is complete — reviewer
+output is already bounded by `AI_REVIEW_MAX_OUTPUT_BYTES`, so intake never re-caps it and never
+omits an accepted finding.
+
+`CATALOG_COMMIT` is also exported with the same value as `AI_REVIEW_HEAD_COMMIT`. It is the
+pre-2.2.0 name, kept for one release so an existing updater does not silently receive an empty
+commit; migrate to `AI_REVIEW_HEAD_COMMIT` before 2.3.0. The
 command must finish successfully before evidence is finalized, the decision is cached, or branch
 state advances. Failure or timeout makes the run inconclusive. SAFE decisions, blocking decisions,
 and exact cache reuse do not invoke it. The updater and its descendants run in a bounded process

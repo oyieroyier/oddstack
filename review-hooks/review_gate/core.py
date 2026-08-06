@@ -194,13 +194,14 @@ class Gate:
     def _decide(self, target, mode, allow_skip):
         identity = self.adapter.identity()
         policy_hash = self.policy.policy_hash()
+        prompt_fingerprint = prompts.template_fingerprint()
         key = store.cache_key(
             target.base,
             target.tree,
             policy_hash,
             "%s:%s" % (
                 self.policy.prompt_template_version,
-                prompts.template_fingerprint(),
+                prompt_fingerprint,
             ),
             identity,
         )
@@ -220,7 +221,9 @@ class Gate:
         if mode == "verify":
             return self._verify_miss(target, policy_hash, identity, key)
 
-        return self._run_paid_review(target, policy_hash, identity, key)
+        return self._run_paid_review(
+            target, policy_hash, identity, key, prompt_fingerprint
+        )
 
     def _load_intact_cache_entry(self, key, target, policy_hash, identity):
         """Load a cache entry and prove its internal consistency.
@@ -467,7 +470,9 @@ class Gate:
         error("INCONCLUSIVE: %s" % detail.splitlines()[0])
         return EXIT_INCONCLUSIVE
 
-    def _run_paid_review(self, target, policy_hash, identity, key):
+    def _run_paid_review(
+        self, target, policy_hash, identity, key, prompt_fingerprint
+    ):
         policy = self.policy
         ev = evidence.RunEvidence(self.repo_root, "review")
         files = gitwork.changed_files(self.repo_root, target.base, target.head)
@@ -533,13 +538,7 @@ class Gate:
             and state.get("policy_hash") == policy_hash
             and state.get("prompt_template_version")
             == policy.prompt_template_version
-            # The template *text* decides what the reviewer was asked to
-            # look for, so incremental coverage must bind to it exactly as
-            # the decision cache does. Binding to the version alone would
-            # let an edited template inherit coverage of base..state.head
-            # that was produced under the old questions.
-            and state.get("prompt_fingerprint")
-            == prompts.template_fingerprint()
+            and state.get("prompt_fingerprint") == prompt_fingerprint
             and state.get("reviewer_identity") == identity
             and gitwork.is_valid_sha(state.get("head", ""))
             and state["head"] != target.head
@@ -731,7 +730,8 @@ class Gate:
             try:
                 durable.record_merge_with_fixes(
                     self.repo_root, self.environ, target.head, result,
-                    policy, deadline,
+                    policy, deadline, run_id=ev.run_id,
+                    started_utc=ev.started_utc, base=target.base,
                 )
             except durable.DurableIntakeError as err:
                 detail = (
@@ -763,6 +763,7 @@ class Gate:
             "tree": target.tree,
             "policy_hash": policy_hash,
             "prompt_template_version": policy.prompt_template_version,
+            "prompt_fingerprint": prompt_fingerprint,
             "reviewer_identity": identity,
             "verdict": result.verdict,
             "must_fix_count": sum(
@@ -779,7 +780,7 @@ class Gate:
             "head": target.head,
             "policy_hash": policy_hash,
             "prompt_template_version": policy.prompt_template_version,
-            "prompt_fingerprint": prompts.template_fingerprint(),
+            "prompt_fingerprint": prompt_fingerprint,
             "reviewer_identity": identity,
             "report_path": report_path,
             "report_digest": report_digest,

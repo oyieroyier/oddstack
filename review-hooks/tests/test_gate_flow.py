@@ -157,10 +157,18 @@ class TestDurableMergeWithFixesIntake(GateTestCase):
         payload = json.loads(raw)
 
         self.assertEqual(payload["head"], head)
+        self.assertEqual(payload["base"], base)
         self.assertEqual(payload["verdict"], "MERGE-WITH-FIXES")
         self.assertEqual(payload["risk_class"], "general")
         self.assertFalse(payload["truncated"])
         self.assertEqual(payload["findings_total"], 1)
+
+        # The run id is known before evidence is finalized, so a consumer can
+        # mint durable finding ids now that match the ones a later scrape of
+        # the finalized run would produce.
+        record = self.latest_run_record()
+        self.assertEqual(payload["run_id"], record["run_id"])
+        self.assertEqual(payload["started_utc"], record["started_utc"])
 
         expected = MERGE_WITH_FIXES_RESULT["findings"][0]
         self.assertEqual(len(payload["findings"]), 1)
@@ -174,7 +182,31 @@ class TestDurableMergeWithFixesIntake(GateTestCase):
         self.assertNotIn("raw_text", raw)
         self.assertNotIn("REVIEW-RESULT-BEGIN", raw)
 
-    def test_payload_truncates_findings_instead_of_growing_unbounded(self):
+    def test_updater_still_receives_the_legacy_head_commit_variable(self):
+        fake = self.write_fake_bin(result_script(MERGE_WITH_FIXES_RESULT))
+        log_path = os.path.join(self.root, "durable-updates.log")
+        updater = self.write_fake_bin(
+            "#!/usr/bin/env bash\n"
+            'printf "%s\\n" "$CATALOG_COMMIT" >> "$FAKE_DURABLE_LOG"\n'
+            "exit 0\n",
+            name="legacy-name-updater",
+        )
+        self.base_env["FAKE_DURABLE_LOG"] = log_path
+        self.write_profile(
+            fake,
+            extra="AI_REVIEW_MERGE_WITH_FIXES_COMMAND='%s'\n" % updater,
+        )
+        base = self.git_out("rev-parse", "HEAD")
+        head = self.commit_change()
+
+        result = self.run_gate("review", "--base", base, "--head", head)
+
+        # An updater written against the pre-2.2.0 name must not silently
+        # receive an empty commit while it migrates.
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.durable_calls(log_path), [head])
+
+    def test_payload_carries_the_full_finding_set(self):
         crowded = dict(MERGE_WITH_FIXES_RESULT)
         crowded["findings"] = [
             {
@@ -203,13 +235,15 @@ class TestDurableMergeWithFixesIntake(GateTestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
         with open(payload_path, "r", encoding="utf-8") as handle:
-            raw = handle.read()
-        payload = json.loads(raw)
+            payload = json.loads(handle.read())
 
-        self.assertLessEqual(len(raw.encode("utf-8")), 2000)
-        self.assertTrue(payload["truncated"])
+        # Reviewer stdout is already bounded by max_output_bytes. Re-capping
+        # intake with the unrelated prior-report budget would drop accepted
+        # findings from the tracked artifact, which is the one thing intake
+        # exists to prevent.
+        self.assertFalse(payload["truncated"])
         self.assertEqual(payload["findings_total"], 40)
-        self.assertLess(len(payload["findings"]), 40)
+        self.assertEqual(len(payload["findings"]), 40)
 
     def test_fresh_merge_with_fixes_updates_intake_before_cache(self):
         fake = self.write_fake_bin(result_script(MERGE_WITH_FIXES_RESULT))

@@ -27,31 +27,32 @@ class DurableIntakeError(Exception):
     """The configured intake updater could not record a decision."""
 
 
-def build_payload(head, result, max_bytes):
-    """Render the bounded stdin payload for one intake run.
+def build_payload(head, result, *, run_id, started_utc, base):
+    """Render the complete validated result for one intake run.
 
-    Drops findings from the end until the serialized payload fits, and says
-    so in the payload rather than silently shipping a short list.
+    Reviewer stdout is already bounded by policy. Intake must not apply the
+    unrelated prior-report limit and silently omit accepted findings.
     """
-    findings = list(result.findings)
-    while True:
-        payload = {
-            "payload_schema_version": PAYLOAD_SCHEMA_VERSION,
-            "head": head,
-            "verdict": result.verdict,
-            "risk_class": result.risk_class,
-            "findings": findings,
-            "findings_total": len(result.findings),
-            "truncated": len(findings) != len(result.findings),
-            "limitations": result.limitations,
-        }
-        text = json.dumps(payload, indent=2, sort_keys=True)
-        if len(text.encode("utf-8")) <= max_bytes or not findings:
-            return text
-        findings = findings[:-1]
+    payload = {
+        "payload_schema_version": PAYLOAD_SCHEMA_VERSION,
+        "run_id": run_id,
+        "started_utc": started_utc,
+        "base": base,
+        "head": head,
+        "verdict": result.verdict,
+        "risk_class": result.risk_class,
+        "findings": list(result.findings),
+        "findings_total": len(result.findings),
+        "truncated": False,
+        "limitations": result.limitations,
+    }
+    return json.dumps(payload, indent=2, sort_keys=True)
 
 
-def record_merge_with_fixes(repo_root, environ, head, result, policy, deadline):
+def record_merge_with_fixes(
+    repo_root, environ, head, result, policy, deadline, *,
+    run_id, started_utc, base
+):
     """Run the profile-owned updater for one fresh MERGE-WITH-FIXES decision.
 
     Raises DurableIntakeError unless the updater completes cleanly inside
@@ -64,11 +65,17 @@ def record_merge_with_fixes(repo_root, environ, head, result, policy, deadline):
         )
 
     updater_env = dict(environ)
+    # CATALOG_COMMIT is the documented version-2 name. Keep exporting it
+    # while newer consumers migrate to the more explicit variable.
+    updater_env["CATALOG_COMMIT"] = head
     updater_env["AI_REVIEW_HEAD_COMMIT"] = head
     outcome = supervisor.run_attempt(
         ["bash", "-o", "pipefail", "-c",
          policy.merge_with_fixes_command.strip()],
-        build_payload(head, result, policy.max_prior_report_bytes),
+        build_payload(
+            head, result, run_id=run_id,
+            started_utc=started_utc, base=base,
+        ),
         min(deadline, now + INTAKE_TIMEOUT_SECONDS),
         stdout_cap=_OUTPUT_CAP_BYTES,
         stderr_cap=_OUTPUT_CAP_BYTES,
