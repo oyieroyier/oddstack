@@ -67,6 +67,7 @@ The harness must:
 8. keep reviewer choice explicit and never fall back to another model;
 9. give installers a clear way to detect old runtimes and profiles;
 10. bound cumulative paid spend across runs with a rolling ledger, not only per run.
+11. let repositories preserve non-blocking findings before a completed decision becomes reusable.
 
 ## Non-goals
 
@@ -354,6 +355,18 @@ fails quickly in `verify` mode. It never stretches an older review over the new 
 Only a parsed, completed review writes a decision cache entry. `INCONCLUSIVE` evidence never acts
 as a decision. A completed blocking review may be cached so repeated pushes do not buy the same
 answer. A bound human acknowledgement can accept that exact cached decision.
+
+A version 2 profile may name a repository-owned durable-intake command. For a fresh completed
+`MERGE-WITH-FIXES` decision, the harness finalizes review evidence, then runs that command from the
+repository root with the reviewed head in `CATALOG_COMMIT`. It must succeed before the decision
+cache or incremental branch state is written. The command is bounded by both a 60-second cap and
+the remaining run deadline and runs in a supervised process group whose descendants are terminated
+and reaped on failure. Failure is recorded as the terminal inconclusive outcome while retaining the
+parsed reviewer decision as context; SAFE decisions, a disabled command, and exact cache reuse
+bypass the command. Its text participates in the policy hash, so enabling or changing intake cannot
+reuse a decision cached under different persistence policy. The harness does not prescribe the
+tracked artifact format or copy reviewer text itself; secret exclusion, redaction, reconciliation,
+and committing generated intake remain consumer-owned policy.
 
 A cache entry proves its own consistency before it acts: its stored base, tree, policy hash,
 prompt version, and reviewer identity must match the live target; its report must sit inside the

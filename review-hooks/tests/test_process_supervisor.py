@@ -13,6 +13,7 @@ import unittest
 
 from gate_test_util import (
     GateTestCase,
+    MERGE_WITH_FIXES_RESULT,
     REVIEW_GATE,
     SAFE_RESULT,
     cli_envelope,
@@ -104,6 +105,52 @@ class TestSigtermResistance(GateTestCase):
             )
         record = self.latest_run_record()
         self.assertTrue(record["attempts"][0]["cleanup_verified"])
+
+    def test_durable_updater_and_nested_child_are_reaped(self):
+        parent_pid_file = os.path.join(self.root, "durable-parent.pid")
+        child_pid_file = os.path.join(self.root, "durable-child.pid")
+        updater = self.write_fake_bin(
+            (
+                "#!/usr/bin/env bash\n"
+                "trap '' TERM\n"
+                'echo "$$" > "%s"\n'
+                "( trap '' TERM; echo \"$BASHPID\" > \"%s\"; sleep 120 ) &\n"
+                "wait\n"
+            ) % (parent_pid_file, child_pid_file),
+            name="durable-updater",
+        )
+        fake = self.write_fake_bin(result_script(MERGE_WITH_FIXES_RESULT))
+        self.write_profile(
+            fake,
+            extra=(
+                "AI_REVIEW_TOTAL_TIMEOUT=2\n"
+                "AI_REVIEW_KILL_GRACE=1\n"
+                "AI_REVIEW_MERGE_WITH_FIXES_COMMAND='%s'\n" % updater
+            ),
+        )
+        base = self.git_out("rev-parse", "HEAD")
+        head = self.commit_change()
+
+        result = self.run_gate("review", "--base", base, "--head", head)
+
+        self.assertEqual(result.returncode, 2)
+        for pid_file in (parent_pid_file, child_pid_file):
+            self.assertTrue(os.path.exists(pid_file), pid_file)
+            with open(pid_file, "r", encoding="utf-8") as handle:
+                pid = int(handle.read().strip())
+            self.assertTrue(
+                _wait_dead(pid), "durable updater process %d survived" % pid
+            )
+        record = self.latest_run_record()
+        self.assertEqual(
+            record["decision"]["reason_code"], "durable_intake_failed"
+        )
+        self.assertEqual(
+            record["reviewer_decision"]["verdict"], "MERGE-WITH-FIXES"
+        )
+        latest_path = os.path.join(self.repo, "ai-reviews", "latest.md")
+        with open(latest_path, "r", encoding="utf-8") as handle:
+            self.assertIn("Decision: **INCONCLUSIVE**", handle.read())
 
 
 class TestOutputFlood(GateTestCase):

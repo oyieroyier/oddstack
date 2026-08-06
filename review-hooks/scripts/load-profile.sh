@@ -59,6 +59,7 @@ load_review_hooks_profile() {
   : "${AI_REVIEW_CREDENTIAL_SCOPE:=personal}"
   : "${AI_REVIEW_ALLOW_PERSONAL_QUOTA:=}"
   : "${AI_REVIEW_CLAUDE_BIN:=claude}"
+  : "${AI_REVIEW_MERGE_WITH_FIXES_COMMAND:=}"
 
   if [ "${REVIEW_HOOKS_PROFILE_VERSION}" = "1" ]; then
     # Version 1 names, mapped to the safer version 2 meanings by the module.
@@ -87,6 +88,7 @@ load_review_hooks_profile() {
   export AI_REVIEW_STARTUP_EXIT_CODES
   export AI_REVIEW_BACKEND AI_REVIEW_CREDENTIAL_SCOPE
   export AI_REVIEW_ALLOW_PERSONAL_QUOTA AI_REVIEW_CLAUDE_BIN
+  export AI_REVIEW_MERGE_WITH_FIXES_COMMAND
 }
 
 run_review_hook_commands() {

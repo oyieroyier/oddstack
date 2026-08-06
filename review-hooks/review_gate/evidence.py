@@ -76,8 +76,13 @@ class RunEvidence:
         attempt_records = []
         for attempt in self.attempts:
             index = attempt["attempt"]
-            stdout_data = attempt.pop("_stdout_data")
-            stderr_data = attempt.pop("_stderr_data")
+            stdout_data = attempt.get("_stdout_data", b"")
+            stderr_data = attempt.get("_stderr_data", b"")
+            attempt_record = {
+                key: value
+                for key, value in attempt.items()
+                if not key.startswith("_")
+            }
             stdout_path = os.path.join(
                 self.run_dir, "attempt-%d.stdout" % index
             )
@@ -89,9 +94,10 @@ class RunEvidence:
             with open(stderr_path, "wb") as handle:
                 handle.write(stderr_data)
             store.atomic_write_json(
-                os.path.join(self.run_dir, "attempt-%d.json" % index), attempt
+                os.path.join(self.run_dir, "attempt-%d.json" % index),
+                attempt_record,
             )
-            attempt_records.append(attempt)
+            attempt_records.append(attempt_record)
 
         report_path = os.path.join(self.run_dir, "report.md")
         header = "# Aggregate review run %s\n\n" % self.run_id

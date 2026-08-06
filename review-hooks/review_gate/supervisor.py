@@ -76,7 +76,7 @@ def _signal_group(pgid, signum):
 
 
 def run_attempt(argv, prompt_text, deadline, stdout_cap, kill_grace,
-                stderr_cap=16384, environ=None):
+                stderr_cap=16384, environ=None, cwd=None):
     """Run one reviewer attempt under the shared monotonic deadline.
 
     `deadline` is an absolute time.monotonic() value. Returns an
@@ -107,7 +107,7 @@ def run_attempt(argv, prompt_text, deadline, stdout_cap, kill_grace,
                 stdin=prompt_handle,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                cwd=work_dir,
+                cwd=cwd or work_dir,
                 env=dict(environ),
                 start_new_session=True,
             )

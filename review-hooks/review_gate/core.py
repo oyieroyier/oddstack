@@ -9,7 +9,7 @@ import os
 import sys
 import time
 
-from . import evidence, gitwork, prompts, results, store, supervisor
+from . import durable, evidence, gitwork, prompts, results, store, supervisor
 from .adapter import ClaudeAdapter
 from .gitwork import ReviewTarget, TargetError
 from .policy import PolicyError
@@ -716,6 +716,53 @@ class Gate:
             # decision; it is not cached and not retried.
             error("INCONCLUSIVE: reviewer could not complete the review")
             return EXIT_INCONCLUSIVE
+
+        if (
+            result.verdict == "MERGE-WITH-FIXES"
+            and policy.merge_with_fixes_command.strip()
+        ):
+            try:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise durable.DurableIntakeError(
+                        "the run deadline expired before durable intake"
+                    )
+                updated = durable.record_merge_with_fixes(
+                    self.repo_root,
+                    self.environ,
+                    target.head,
+                    policy.merge_with_fixes_command,
+                    min(deadline, time.monotonic() + 60),
+                    policy.kill_grace,
+                )
+            except durable.DurableIntakeError as err:
+                detail = (
+                    "The reviewer returned MERGE-WITH-FIXES with %d finding(s), "
+                    "but durable intake failed: %s"
+                    % (len(result.findings), err)
+                )
+                failure_record = dict(base_record)
+                failure_record["decision"] = {
+                    "reason_code": "durable_intake_failed"
+                }
+                failure_record["reviewer_decision"] = record["decision"]
+                failure_report = ev.render_failure_report(
+                    target, "durable_intake_failed", detail
+                )
+                failure_report += (
+                    "\n## Parsed reviewer result\n\n"
+                    + ev.render_decision_report(target, result, policy)
+                )
+                ev.finalize(failure_record, failure_report)
+                error(
+                    "INCONCLUSIVE: durable merge-with-fixes intake failed: %s" % err
+                )
+                return EXIT_INCONCLUSIVE
+            if updated:
+                info(
+                    "durable merge-with-fixes intake refreshed; include its "
+                    "changes in the next intentional commit"
+                )
 
         self.cache.write(key, {
             "created_utc": evidence.utc_now_iso(),

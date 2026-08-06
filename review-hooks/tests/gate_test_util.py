@@ -24,6 +24,21 @@ SAFE_RESULT = {
     "limitations": [],
 }
 
+MERGE_WITH_FIXES_RESULT = {
+    "schema_version": 1,
+    "verdict": "MERGE-WITH-FIXES",
+    "risk_class": "general",
+    "findings": [{
+        "severity": "SHOULD-FIX",
+        "file": "README.md",
+        "line": 1,
+        "trigger": "a non-blocking defect remains",
+        "consequence": "the finding could be lost after publication",
+        "fix": "record it in repository-owned durable intake",
+    }],
+    "limitations": [],
+}
+
 BLOCKING_RESULT = {
     "schema_version": 1,
     "verdict": "MERGE-WITH-FIXES",

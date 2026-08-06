@@ -422,6 +422,18 @@ test_lmm_page_audit_contract() {
   fi
 }
 
+test_merge_with_fixes_intake_profiles() {
+  local generic_profile="$module_root/profiles/generic.conf"
+  local lmm_profile="$module_root/profiles/lmm.example.conf"
+
+  if grep -q "^AI_REVIEW_MERGE_WITH_FIXES_COMMAND=''$" "$generic_profile" &&
+    grep -q "^AI_REVIEW_MERGE_WITH_FIXES_COMMAND='node plans/evidence/generate-merge-with-fixes-catalog.mjs'$" "$lmm_profile"; then
+    pass "durable merge-with-fixes intake is opt-in with an LMM example"
+  else
+    fail "durable merge-with-fixes intake is opt-in with an LMM example"
+  fi
+}
+
 test_dry_run
 test_install_and_deactivate
 test_existing_hook_refusal_and_composition
@@ -437,6 +449,7 @@ test_legacy_v1_profile_through_compat_adapter
 test_doctor_reports_profile_version_one
 test_python_review_gate_suite
 test_lmm_page_audit_contract
+test_merge_with_fixes_intake_profiles
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures of $tests tests failed" >&2

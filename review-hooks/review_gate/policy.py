@@ -48,6 +48,7 @@ class Policy:
     credential_scope: str
     allow_personal_quota: bool
     claude_bin: str
+    merge_with_fixes_command: str
     startup_exit_codes: frozenset = field(default_factory=frozenset)
 
     @property
@@ -76,6 +77,7 @@ class Policy:
             "max_prompt_tokens=%d" % self.max_prompt_tokens,
             "max_prior_report_bytes=%d" % self.max_prior_report_bytes,
             "max_output_bytes=%d" % self.max_output_bytes,
+            "merge_with_fixes_command=%s" % self.merge_with_fixes_command,
         ]
         digest = hashlib.sha256("\n".join(parts).encode("utf-8"))
         return digest.hexdigest()
@@ -239,5 +241,8 @@ def load_policy(environ=None):
         credential_scope=credential_scope,
         allow_personal_quota=environ.get("AI_REVIEW_ALLOW_PERSONAL_QUOTA", "") == "1",
         claude_bin=_env(environ, "AI_REVIEW_CLAUDE_BIN", "claude"),
+        merge_with_fixes_command=_env(
+            environ, "AI_REVIEW_MERGE_WITH_FIXES_COMMAND", ""
+        ),
         startup_exit_codes=frozenset(startup_codes),
     )
