@@ -618,7 +618,7 @@ class Gate:
                 )
             else:
                 result_text, attempt_cost = stdout_text, None
-            attempt_costs.append(attempt_cost)
+            attempt_costs.append((attempt_cost, outcome.started))
 
             completed_cleanly = (
                 outcome.started
@@ -681,12 +681,14 @@ class Gate:
         # Settle the reservation to what the attempts can prove: the
         # reported cost where the adapter supplied one, the full cap for
         # a launched attempt that reported nothing, zero for an attempt
-        # that never launched. When nothing is reclaimed the reservation
-        # already says it all.
+        # that never launched.
         settled_usd = sum(
-            attempt_cap if cost is None else cost for cost in attempt_costs
+            (attempt_cap if cost is None else cost) if started else 0.0
+            for cost, started in attempt_costs
         )
-        if settled_usd != assigned_usd:
+        if settled_usd != assigned_usd or any(
+            not started for _, started in attempt_costs
+        ):
             self.ledger.settle(ev.run_id, settled_usd)
 
         if result is None:

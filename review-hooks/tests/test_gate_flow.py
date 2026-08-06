@@ -546,6 +546,76 @@ class TestSpendLedger(GateTestCase):
         self.assertEqual(len(entries), 1)
         self.assertEqual(entries[0]["assigned_usd"], 2.0)
 
+    def test_unlaunched_attempt_settles_to_zero(self):
+        missing_bin = os.path.join(self.root, "no-such-binary")
+        self.write_profile(missing_bin)
+        base = self.git_out("rev-parse", "HEAD")
+        head = self.commit_change()
+
+        result = self.run_gate("review", "--base", base, "--head", head)
+        self.assertEqual(result.returncode, 2)
+        ledger_path = os.path.join(
+            self.repo, "ai-reviews", "spend", "ledger.jsonl"
+        )
+        with open(ledger_path, "r", encoding="utf-8") as handle:
+            entries = [json.loads(line) for line in handle if line.strip()]
+        self.assertEqual(len(entries), 2)
+        self.assertEqual(entries[0]["assigned_usd"], 2.0)
+        self.assertIsNone(entries[0]["actual_usd"])
+        self.assertEqual(entries[1]["actual_usd"], 0.0)
+
+    def test_unlaunched_attempts_do_not_exhaust_the_rolling_limit(self):
+        missing_bin = os.path.join(self.root, "no-such-binary")
+        self.write_profile(
+            missing_bin,
+            extra="AI_REVIEW_ROLLING_SPEND_LIMIT_USD=3.00\n",
+        )
+        base = self.git_out("rev-parse", "HEAD")
+        head1 = self.commit_change()
+
+        first = self.run_gate("review", "--base", base, "--head", head1)
+        self.assertEqual(first.returncode, 2)
+
+        head2 = self.commit_change("more.txt", "more\n", "More")
+        second = self.run_gate("review", "--base", base, "--head", head2)
+        self.assertEqual(second.returncode, 2)
+
+        # Two phantom "reserve $2, settle $0" runs left no real spend
+        # behind, so a third distinct tree still buys a review.
+        working_fake = self.write_fake_bin(result_script(SAFE_RESULT))
+        self.write_profile(
+            working_fake,
+            extra="AI_REVIEW_ROLLING_SPEND_LIMIT_USD=3.00\n",
+        )
+        head3 = self.commit_change("even-more.txt", "even more\n", "More still")
+        third = self.run_gate("review", "--base", base, "--head", head3)
+        self.assertEqual(third.returncode, 0, third.stderr)
+
+    def test_launched_but_silent_attempt_keeps_the_full_reservation(self):
+        script = (
+            "#!/usr/bin/env bash\n"
+            'echo "$$" >> "$FAKE_CALL_LOG"\n'
+            "exit 9\n"
+        )
+        fake = self.write_fake_bin(script)
+        self.write_profile(fake)
+        base = self.git_out("rev-parse", "HEAD")
+        head = self.commit_change()
+
+        result = self.run_gate("review", "--base", base, "--head", head)
+        self.assertEqual(result.returncode, 2)
+        ledger_path = os.path.join(
+            self.repo, "ai-reviews", "spend", "ledger.jsonl"
+        )
+        with open(ledger_path, "r", encoding="utf-8") as handle:
+            entries = [json.loads(line) for line in handle if line.strip()]
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["assigned_usd"], 2.0)
+        self.assertIsNone(entries[0]["actual_usd"])
+        self.assertFalse(
+            any(entry.get("actual_usd") == 0.0 for entry in entries)
+        )
+
     def test_old_ledger_entries_age_out(self):
         fake = self.write_fake_bin(result_script(SAFE_RESULT))
         self.write_profile(
