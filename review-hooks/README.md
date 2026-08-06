@@ -136,13 +136,15 @@ default. The rolling limit bounds paid spend across runs inside the window; set 
 The generic profile keeps AI review disabled. Enable it only after adapting repository naming, path
 classification, sensitive-path rules, budgets, and credential ownership.
 
-`AI_REVIEW_MERGE_WITH_FIXES_COMMAND` is an optional repository-owned intake command. After a fresh
-completed `MERGE-WITH-FIXES` report is written, the gate runs this command from the repository root
-with `CATALOG_COMMIT` set to the reviewed head. The command must finish successfully before the
-decision is cached or branch state advances. Failure or timeout makes the run inconclusive. SAFE
-decisions and exact cache reuse do not invoke it. The updater and its descendants run in a bounded
-process group; failure is recorded as the terminal outcome while retaining the reviewer decision
-as context. Because the profile is trusted executable policy, changing the command invalidates
+`AI_REVIEW_MERGE_WITH_FIXES_COMMAND` is an optional repository-owned intake command and requires a
+version 2 profile. After a fresh non-blocking `MERGE-WITH-FIXES` review parses, the gate runs this
+command from the repository root with `AI_REVIEW_HEAD_COMMIT` set to the reviewed head. The
+command must finish successfully before evidence is finalized, the decision is cached, or branch
+state advances. Failure or timeout makes the run inconclusive. SAFE decisions, blocking decisions,
+and exact cache reuse do not invoke it. The updater and its descendants run in a bounded process
+group; its output is captured for diagnostics (truncated past 4 KiB) but output volume never fails
+it, and failure is recorded as the terminal outcome while retaining the reviewer decision as
+context. Because the profile is trusted executable policy, changing the command invalidates
 cached decisions. The generic profile leaves it empty; a consumer must own the destination,
 reconciliation rules, secret handling, and generated-file commit flow.
 
@@ -212,7 +214,7 @@ When enabled, the gate:
   identity, so editing the prompt template voids every cached verdict;
 - carries structured open findings into an incremental follow-up, size-capped;
 - runs the optional repository-owned durable intake command before caching a fresh
-  `MERGE-WITH-FIXES` decision;
+  non-blocking `MERGE-WITH-FIXES` decision;
 - writes `ai-reviews/runs/<run-id>/` evidence for every decision, including `INCONCLUSIVE`;
 - exits 0 (accepted), 1 (blocking findings), or 2 (no trustworthy decision).
 

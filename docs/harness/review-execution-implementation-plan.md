@@ -135,14 +135,16 @@ without the one-run opt-in.
 6. Add the bound acknowledgement command.
 7. Append every paid run to `ai-reviews/spend/ledger.jsonl` and refuse a paid launch that would
    pass the rolling limit.
-8. Run an optional repository-owned durable-intake command for each fresh
-   `MERGE-WITH-FIXES` decision before writing cache or incremental state. Bind the command to the
-   policy hash and fail inconclusive if it cannot finish inside the remaining run deadline.
+8. Run an optional repository-owned durable-intake command for each fresh non-blocking
+   `MERGE-WITH-FIXES` decision before finalizing evidence or writing cache or incremental state.
+   Bind the command to the policy hash and fail inconclusive if it cannot finish inside the
+   remaining run deadline.
 
 Tests must cover damaged state, a moved report, a stale policy hash, a changed reviewer identity,
 and a blocking report with an acknowledgement copied from another tree.
-Also cover successful intake, updater failure without cache, SAFE bypass, exact-cache bypass, and
-enabling intake after an older cached decision.
+Also cover successful intake, updater failure without cache, SAFE bypass, blocking bypass,
+exact-cache bypass, a noisy updater whose output volume must not fail intake, a version 1 profile
+refusing the command, and enabling intake after an older cached decision.
 
 Verification:
 

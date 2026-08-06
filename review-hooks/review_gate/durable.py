@@ -1,52 +1,52 @@
 """Repository-owned durable intake for completed non-blocking findings."""
 
+import time
+
 from . import supervisor
+
+# Policy-level cap on one updater run, applied inside the run deadline:
+# long enough for a local generator, short enough that intake cannot eat
+# a retry budget.
+INTAKE_TIMEOUT_SECONDS = 60
+
+# Bounds captured diagnostics only; output volume never fails the updater.
+_OUTPUT_CAP_BYTES = 4096
 
 
 class DurableIntakeError(Exception):
     """The configured intake updater could not record a decision."""
 
 
-def record_merge_with_fixes(
-    repo_root, environ, head, command, deadline, kill_grace
-):
-    """Run the profile-owned updater for one fresh MERGE-WITH-FIXES decision."""
-    command = command.strip()
-    if not command:
-        return False
+def record_merge_with_fixes(repo_root, environ, head, policy, deadline):
+    """Run the profile-owned updater for one fresh MERGE-WITH-FIXES decision.
+
+    Raises DurableIntakeError unless the updater completes cleanly inside
+    both the intake cap and the remaining run deadline.
+    """
+    now = time.monotonic()
+    if now >= deadline:
+        raise DurableIntakeError(
+            "the run deadline expired before durable intake"
+        )
 
     updater_env = dict(environ)
-    updater_env["CATALOG_COMMIT"] = head
+    updater_env["AI_REVIEW_HEAD_COMMIT"] = head
     outcome = supervisor.run_attempt(
-        ["bash", "-o", "pipefail", "-c", command],
+        ["bash", "-o", "pipefail", "-c",
+         policy.merge_with_fixes_command.strip()],
         "",
-        deadline,
-        stdout_cap=4096,
-        stderr_cap=4096,
-        kill_grace=kill_grace,
+        min(deadline, now + INTAKE_TIMEOUT_SECONDS),
+        stdout_cap=_OUTPUT_CAP_BYTES,
+        stderr_cap=_OUTPUT_CAP_BYTES,
+        kill_grace=policy.kill_grace,
         environ=updater_env,
         cwd=repo_root,
+        stop_on_overflow=False,
     )
-    completed = (
-        outcome.started
-        and outcome.exit_code == 0
-        and outcome.cleanup_verified
-        and not outcome.overflow
-        and not outcome.timed_out
-        and not outcome.interrupted
-    )
-    if not completed:
+    if not outcome.completed_cleanly:
+        reason = "updater %s" % outcome.failure_summary()
         output = outcome.stderr_data or outcome.stdout_data
         detail = output.decode("utf-8", errors="replace").strip()
-        if outcome.timed_out:
-            reason = "updater timed out"
-        elif not outcome.cleanup_verified:
-            reason = "updater cleanup could not be verified"
-        elif outcome.launch_error:
-            reason = "updater launch failed: %s" % outcome.launch_error
-        else:
-            reason = "updater exited %s" % outcome.exit_code
         if detail:
             reason += ": %s" % detail[:1000]
         raise DurableIntakeError(reason)
-    return True

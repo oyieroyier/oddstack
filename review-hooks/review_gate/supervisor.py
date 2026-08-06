@@ -42,6 +42,27 @@ class AttemptOutcome:
     cleanup_detail: str = "no process started"
     pid: int = None
 
+    @property
+    def completed_cleanly(self):
+        return (
+            self.started
+            and self.exit_code == 0
+            and self.cleanup_verified
+            and not self.overflow
+            and not self.timed_out
+            and not self.interrupted
+        )
+
+    def failure_summary(self):
+        """Why the attempt did not complete cleanly, for diagnostics."""
+        if self.timed_out:
+            return "timed out"
+        if not self.cleanup_verified:
+            return "cleanup could not be verified"
+        if self.launch_error:
+            return "launch failed: %s" % self.launch_error
+        return "exited %s" % self.exit_code
+
 
 class _PipeDrain:
     def __init__(self, cap):
@@ -76,12 +97,15 @@ def _signal_group(pgid, signum):
 
 
 def run_attempt(argv, prompt_text, deadline, stdout_cap, kill_grace,
-                stderr_cap=16384, environ=None, cwd=None):
+                stderr_cap=16384, environ=None, cwd=None,
+                stop_on_overflow=True):
     """Run one reviewer attempt under the shared monotonic deadline.
 
     `deadline` is an absolute time.monotonic() value. Returns an
     AttemptOutcome; never raises for reviewer behavior. KeyboardInterrupt
-    is recorded as an interrupted outcome after cleanup.
+    is recorded as an interrupted outcome after cleanup. With
+    `stop_on_overflow=False` the caps bound only what is captured;
+    excess output is discarded and never ends the attempt.
     """
     if environ is None:
         environ = os.environ
@@ -149,7 +173,7 @@ def run_attempt(argv, prompt_text, deadline, stdout_cap, kill_grace,
                     key.data.feed(chunk)
                     # The cap covers combined captured output; stderr
                     # cannot smuggle an unbounded stream past it.
-                    if (
+                    if stop_on_overflow and (
                         stdout_drain.total > stdout_cap
                         or stdout_drain.total + stderr_drain.total
                         > stdout_cap + stderr_cap

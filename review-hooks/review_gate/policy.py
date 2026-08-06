@@ -178,6 +178,16 @@ def load_policy(environ=None):
                 "an unreachable second attempt only halves the spend cap"
             )
 
+    merge_with_fixes_command = _env(
+        environ, "AI_REVIEW_MERGE_WITH_FIXES_COMMAND", ""
+    )
+    if profile_version == 1 and merge_with_fixes_command.strip():
+        # Silently dropping a persistence promise would be worse than
+        # refusing: the operator believes findings are being preserved.
+        raise PolicyError(
+            "AI_REVIEW_MERGE_WITH_FIXES_COMMAND requires a version 2 profile"
+        )
+
     max_budget = _non_negative_number(environ, "AI_REVIEW_MAX_BUDGET_USD", "2.00")
     if max_budget <= 0:
         raise PolicyError("AI_REVIEW_MAX_BUDGET_USD must be greater than zero")
@@ -241,8 +251,6 @@ def load_policy(environ=None):
         credential_scope=credential_scope,
         allow_personal_quota=environ.get("AI_REVIEW_ALLOW_PERSONAL_QUOTA", "") == "1",
         claude_bin=_env(environ, "AI_REVIEW_CLAUDE_BIN", "claude"),
-        merge_with_fixes_command=_env(
-            environ, "AI_REVIEW_MERGE_WITH_FIXES_COMMAND", ""
-        ),
+        merge_with_fixes_command=merge_with_fixes_command,
         startup_exit_codes=frozenset(startup_codes),
     )

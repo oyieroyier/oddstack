@@ -62,6 +62,12 @@ load_review_hooks_profile() {
   : "${AI_REVIEW_MERGE_WITH_FIXES_COMMAND:=}"
 
   if [ "${REVIEW_HOOKS_PROFILE_VERSION}" = "1" ]; then
+    # Durable intake is version 2 policy; a version 1 profile naming it
+    # must fail loudly rather than silently drop a persistence promise.
+    if [ -n "${AI_REVIEW_MERGE_WITH_FIXES_COMMAND}" ]; then
+      echo "[review-hooks] AI_REVIEW_MERGE_WITH_FIXES_COMMAND requires a version 2 profile" >&2
+      return 2
+    fi
     # Version 1 names, mapped to the safer version 2 meanings by the module.
     : "${AI_REVIEW_TIMEOUT:=600}"
     : "${AI_REVIEW_MAX_ATTEMPTS:=2}"

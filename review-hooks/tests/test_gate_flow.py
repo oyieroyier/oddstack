@@ -90,7 +90,7 @@ class TestDurableMergeWithFixesIntake(GateTestCase):
         log_path = os.path.join(self.root, "durable-updates.log")
         updater = self.write_fake_bin(
             "#!/usr/bin/env bash\n"
-            'printf "%%s\\n" "$CATALOG_COMMIT" >> "$FAKE_DURABLE_LOG"\n'
+            'printf "%%s\\n" "$AI_REVIEW_HEAD_COMMIT" >> "$FAKE_DURABLE_LOG"\n'
             "exit %d\n" % exit_code,
             name="durable-updater",
         )
@@ -179,6 +179,71 @@ class TestDurableMergeWithFixesIntake(GateTestCase):
         self.assertEqual(first.returncode, 0, first.stderr)
         self.assertEqual(repeat.returncode, 0, repeat.stderr)
         self.assertEqual(self.durable_calls(log_path), [merge_head])
+
+    def test_blocking_decision_bypasses_intake_and_still_caches(self):
+        fake = self.write_fake_bin(result_script(BLOCKING_RESULT))
+        updater, log_path = self.durable_updater()
+        self.write_profile(
+            fake,
+            extra="AI_REVIEW_MERGE_WITH_FIXES_COMMAND='%s'\n" % updater,
+        )
+        base = self.git_out("rev-parse", "HEAD")
+        head = self.commit_change()
+
+        result = self.run_gate("review", "--base", base, "--head", head)
+
+        # A blocking review persists through its cache entry and the
+        # acknowledgement flow; a broken updater must not destroy it.
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(self.durable_calls(log_path), [])
+        self.assertEqual(len(self.cache_entries()), 1)
+
+    def test_noisy_updater_output_does_not_fail_intake(self):
+        log_path = os.path.join(self.root, "durable-updates.log")
+        updater = self.write_fake_bin(
+            "#!/usr/bin/env bash\n"
+            'printf "%s\\n" "$AI_REVIEW_HEAD_COMMIT" >> "$FAKE_DURABLE_LOG"\n'
+            "head -c 100000 /dev/zero | tr '\\0' 'x'\n"
+            "exit 0\n",
+            name="durable-updater",
+        )
+        self.base_env["FAKE_DURABLE_LOG"] = log_path
+        fake = self.write_fake_bin(result_script(MERGE_WITH_FIXES_RESULT))
+        self.write_profile(
+            fake,
+            extra="AI_REVIEW_MERGE_WITH_FIXES_COMMAND='%s'\n" % updater,
+        )
+        base = self.git_out("rev-parse", "HEAD")
+        head = self.commit_change()
+
+        result = self.run_gate("review", "--base", base, "--head", head)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.durable_calls(log_path), [head])
+        self.assertEqual(len(self.cache_entries()), 1)
+
+    def test_version_1_profile_cannot_enable_intake(self):
+        fake = self.write_fake_bin(result_script(MERGE_WITH_FIXES_RESULT))
+        updater, log_path = self.durable_updater()
+        self.write_profile(
+            fake,
+            extra="AI_REVIEW_MERGE_WITH_FIXES_COMMAND='%s'\n" % updater,
+        )
+        profile_path = os.path.join(self.repo, ".review-hooks.conf")
+        with open(profile_path, "r", encoding="utf-8") as handle:
+            profile = handle.read()
+        self.write_file(profile_path, profile.replace(
+            "REVIEW_HOOKS_PROFILE_VERSION=2", "REVIEW_HOOKS_PROFILE_VERSION=1"
+        ))
+        base = self.git_out("rev-parse", "HEAD")
+        head = self.commit_change()
+
+        result = self.run_gate("review", "--base", base, "--head", head)
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("version 2", result.stderr)
+        self.assertEqual(self.call_count(), 0)
+        self.assertEqual(self.durable_calls(log_path), [])
 
     def test_enabling_intake_invalidates_an_older_cached_decision(self):
         fake = self.write_fake_bin(result_script(MERGE_WITH_FIXES_RESULT))

@@ -250,8 +250,9 @@ See [`review-hooks/README.md`](review-hooks/README.md) for the profile interface
 credential rules, deactivation, and the LMM reference adapter.
 
 Repositories may also opt into a profile-owned durable-intake command that must preserve a fresh
-`MERGE-WITH-FIXES` decision before the gate caches or reuses it. The generic profile leaves this
-off; the LMM reference adapter shows the repository-specific command without bundling its tracker.
+non-blocking `MERGE-WITH-FIXES` decision before the gate caches or reuses it. The generic profile
+leaves this off; the LMM reference adapter shows the repository-specific command without bundling
+its tracker.
 
 Repositories with a manual page-review ledger can add its advisory checker to
 `PRE_PUSH_COMMANDS`. The LMM reference profile does this with `pnpm audit:pages`. Agents may detect

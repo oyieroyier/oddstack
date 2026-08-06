@@ -356,17 +356,21 @@ Only a parsed, completed review writes a decision cache entry. `INCONCLUSIVE` ev
 as a decision. A completed blocking review may be cached so repeated pushes do not buy the same
 answer. A bound human acknowledgement can accept that exact cached decision.
 
-A version 2 profile may name a repository-owned durable-intake command. For a fresh completed
-`MERGE-WITH-FIXES` decision, the harness finalizes review evidence, then runs that command from the
-repository root with the reviewed head in `CATALOG_COMMIT`. It must succeed before the decision
-cache or incremental branch state is written. The command is bounded by both a 60-second cap and
-the remaining run deadline and runs in a supervised process group whose descendants are terminated
-and reaped on failure. Failure is recorded as the terminal inconclusive outcome while retaining the
-parsed reviewer decision as context; SAFE decisions, a disabled command, and exact cache reuse
-bypass the command. Its text participates in the policy hash, so enabling or changing intake cannot
-reuse a decision cached under different persistence policy. The harness does not prescribe the
-tracked artifact format or copy reviewer text itself; secret exclusion, redaction, reconciliation,
-and committing generated intake remain consumer-owned policy.
+A version 2 profile may name a repository-owned durable-intake command; version 1 profiles that
+name one are refused. For a fresh completed non-blocking `MERGE-WITH-FIXES` decision, the harness
+runs that command from the repository root with the reviewed head in `AI_REVIEW_HEAD_COMMIT`. It
+must succeed before review evidence is finalized and before the decision cache or incremental
+branch state is written; evidence is finalized exactly once, with the terminal outcome. The
+command is bounded by both a 60-second cap and the remaining run deadline and runs in a supervised
+process group whose descendants are terminated and reaped on failure; its output is captured
+bounded for diagnostics, and output volume alone never fails it. Failure is recorded as the
+terminal inconclusive outcome while retaining the parsed reviewer decision as context; SAFE
+decisions, blocking decisions, a disabled command, and exact cache reuse bypass the command — a
+blocking decision persists through its cache entry and the bound acknowledgement flow, which a
+broken updater must not destroy. Its text participates in the policy hash, so enabling or changing
+intake cannot reuse a decision cached under different persistence policy. The harness does not
+prescribe the tracked artifact format or copy reviewer text itself; secret exclusion, redaction,
+reconciliation, and committing generated intake remain consumer-owned policy.
 
 A cache entry proves its own consistency before it acts: its stored base, tree, policy hash,
 prompt version, and reviewer identity must match the live target; its report must sit inside the

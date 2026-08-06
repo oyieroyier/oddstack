@@ -453,10 +453,17 @@ class Gate:
 
     # ----- paid review -----------------------------------------------------
 
-    def _refuse(self, ev, target, record, reason_code, detail):
+    def _refuse(self, ev, target, record, reason_code, detail,
+                record_extra=None, report_extra=""):
         record = dict(record)
         record["decision"] = {"reason_code": reason_code}
-        ev.finalize(record, ev.render_failure_report(target, reason_code, detail))
+        if record_extra:
+            record.update(record_extra)
+        ev.finalize(
+            record,
+            ev.render_failure_report(target, reason_code, detail)
+            + report_extra,
+        )
         error("INCONCLUSIVE: %s" % detail.splitlines()[0])
         return EXIT_INCONCLUSIVE
 
@@ -620,15 +627,7 @@ class Gate:
                 result_text, attempt_cost = stdout_text, None
             attempt_costs.append(attempt_cost)
 
-            completed_cleanly = (
-                outcome.started
-                and outcome.exit_code == 0
-                and outcome.cleanup_verified
-                and not outcome.overflow
-                and not outcome.timed_out
-                and not outcome.interrupted
-            )
-            if completed_cleanly:
+            if outcome.completed_cleanly:
                 try:
                     if result_text is None:
                         raise ResultError(
@@ -690,14 +689,10 @@ class Gate:
             self.ledger.settle(ev.run_id, settled_usd)
 
         if result is None:
-            record = dict(base_record)
-            record["decision"] = {"reason_code": terminal_reason}
-            ev.finalize(record, ev.render_failure_report(
-                target, terminal_reason, terminal_detail or terminal_reason
-            ))
-            error("INCONCLUSIVE: reviewer failed within the configured budget")
-            error("reason: %s" % terminal_reason)
-            return EXIT_INCONCLUSIVE
+            return self._refuse(
+                ev, target, base_record, terminal_reason,
+                terminal_detail or terminal_reason,
+            )
 
         record = dict(base_record)
         record["decision"] = {
@@ -707,62 +702,50 @@ class Gate:
             "parser": result.parser,
             "findings_count": len(result.findings),
         }
-        report_path, report_digest = ev.finalize(
-            record, ev.render_decision_report(target, result, policy)
-        )
 
         if result.verdict == "INCONCLUSIVE":
             # A completed INCONCLUSIVE verdict is evidence, never a
             # decision; it is not cached and not retried.
+            ev.finalize(record, ev.render_decision_report(target, result, policy))
             error("INCONCLUSIVE: reviewer could not complete the review")
             return EXIT_INCONCLUSIVE
 
+        # Durable intake preserves non-blocking findings; a blocking
+        # decision persists through its cache entry and the bound
+        # acknowledgement flow, and must stay cacheable even when the
+        # updater is broken.
         if (
             result.verdict == "MERGE-WITH-FIXES"
+            and not result.blocking
             and policy.merge_with_fixes_command.strip()
         ):
             try:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise durable.DurableIntakeError(
-                        "the run deadline expired before durable intake"
-                    )
-                updated = durable.record_merge_with_fixes(
-                    self.repo_root,
-                    self.environ,
-                    target.head,
-                    policy.merge_with_fixes_command,
-                    min(deadline, time.monotonic() + 60),
-                    policy.kill_grace,
+                durable.record_merge_with_fixes(
+                    self.repo_root, self.environ, target.head, policy, deadline
                 )
             except durable.DurableIntakeError as err:
                 detail = (
-                    "The reviewer returned MERGE-WITH-FIXES with %d finding(s), "
-                    "but durable intake failed: %s"
-                    % (len(result.findings), err)
+                    "durable merge-with-fixes intake failed: %s\n"
+                    "the reviewer returned MERGE-WITH-FIXES with %d "
+                    "finding(s); its parsed result is preserved below"
+                    % (err, len(result.findings))
                 )
-                failure_record = dict(base_record)
-                failure_record["decision"] = {
-                    "reason_code": "durable_intake_failed"
-                }
-                failure_record["reviewer_decision"] = record["decision"]
-                failure_report = ev.render_failure_report(
-                    target, "durable_intake_failed", detail
+                return self._refuse(
+                    ev, target, base_record, "durable_intake_failed", detail,
+                    record_extra={"reviewer_decision": record["decision"]},
+                    report_extra=(
+                        "\n## Parsed reviewer result\n\n"
+                        + ev.render_decision_report(target, result, policy)
+                    ),
                 )
-                failure_report += (
-                    "\n## Parsed reviewer result\n\n"
-                    + ev.render_decision_report(target, result, policy)
-                )
-                ev.finalize(failure_record, failure_report)
-                error(
-                    "INCONCLUSIVE: durable merge-with-fixes intake failed: %s" % err
-                )
-                return EXIT_INCONCLUSIVE
-            if updated:
-                info(
-                    "durable merge-with-fixes intake refreshed; include its "
-                    "changes in the next intentional commit"
-                )
+            info(
+                "durable merge-with-fixes intake refreshed; include its "
+                "changes in the next intentional commit"
+            )
+
+        report_path, report_digest = ev.finalize(
+            record, ev.render_decision_report(target, result, policy)
+        )
 
         self.cache.write(key, {
             "created_utc": evidence.utc_now_iso(),
