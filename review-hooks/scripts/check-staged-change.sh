@@ -10,7 +10,10 @@ script_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$script_root/load-profile.sh"
 load_review_hooks_profile "$repo_root" || exit $?
 
-mapfile -d '' staged_files < <(
+staged_files=()
+while IFS= read -r -d '' staged_path; do
+  staged_files+=("$staged_path")
+done < <(
   git diff --cached --name-only --diff-filter=ACMR -z
 )
 
