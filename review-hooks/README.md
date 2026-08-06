@@ -138,7 +138,28 @@ classification, sensitive-path rules, budgets, and credential ownership.
 
 `AI_REVIEW_MERGE_WITH_FIXES_COMMAND` is an optional repository-owned intake command and requires a
 version 2 profile. After a fresh non-blocking `MERGE-WITH-FIXES` review parses, the gate runs this
-command from the repository root with `AI_REVIEW_HEAD_COMMIT` set to the reviewed head. The
+command from the repository root with `AI_REVIEW_HEAD_COMMIT` set to the reviewed head, and feeds
+it the parsed result on **stdin** as JSON:
+
+```json
+{
+  "payload_schema_version": 1,
+  "head": "<reviewed head sha>",
+  "verdict": "MERGE-WITH-FIXES",
+  "risk_class": "general",
+  "findings": [{"severity": "SHOULD-FIX", "file": "...", "line": 1,
+                "trigger": "...", "consequence": "...", "fix": "..."}],
+  "findings_total": 1,
+  "truncated": false,
+  "limitations": []
+}
+```
+
+Intake runs before evidence is finalized, so the run's report does not exist yet — this payload is
+what the command has to work with. Raw reviewer prose is never included: it is untrusted model
+output, and every field above is schema-validated first. If the serialized payload would exceed
+`AI_REVIEW_MAX_PRIOR_REPORT_BYTES`, findings are dropped from the end and `truncated` is `true`
+with `findings_total` giving the real count. The
 command must finish successfully before evidence is finalized, the decision is cached, or branch
 state advances. Failure or timeout makes the run inconclusive. SAFE decisions, blocking decisions,
 and exact cache reuse do not invoke it. The updater and its descendants run in a bounded process

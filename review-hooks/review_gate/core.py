@@ -723,7 +723,8 @@ class Gate:
         ):
             try:
                 durable.record_merge_with_fixes(
-                    self.repo_root, self.environ, target.head, policy, deadline
+                    self.repo_root, self.environ, target.head, result,
+                    policy, deadline,
                 )
             except durable.DurableIntakeError as err:
                 detail = (

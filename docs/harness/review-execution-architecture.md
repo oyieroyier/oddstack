@@ -358,7 +358,12 @@ answer. A bound human acknowledgement can accept that exact cached decision.
 
 A version 2 profile may name a repository-owned durable-intake command; version 1 profiles that
 name one are refused. For a fresh completed non-blocking `MERGE-WITH-FIXES` decision, the harness
-runs that command from the repository root with the reviewed head in `AI_REVIEW_HEAD_COMMIT`. It
+runs that command from the repository root with the reviewed head in `AI_REVIEW_HEAD_COMMIT` and
+the parsed result on its standard input as bounded JSON — schema version, head, verdict, risk
+class, findings, a total-and-truncated pair, and limitations. Because intake precedes finalization
+the run's report does not yet exist, so that payload is the only material the command has; raw
+reviewer text is never included in it, and findings are dropped from the end with `truncated` set
+rather than allowing the payload to grow unbounded. It
 must succeed before review evidence is finalized and before the decision cache or incremental
 branch state is written; evidence is finalized exactly once, with the terminal outcome. The
 command is bounded by both a 60-second cap and the remaining run deadline and runs in a supervised

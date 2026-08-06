@@ -127,6 +127,90 @@ class TestDurableMergeWithFixesIntake(GateTestCase):
         except OSError:
             return []
 
+    def payload_updater(self):
+        """A fake updater that preserves what it is actually given."""
+        payload_path = os.path.join(self.root, "durable-payload.json")
+        updater = self.write_fake_bin(
+            "#!/usr/bin/env bash\n"
+            'cat > "$FAKE_DURABLE_PAYLOAD"\n'
+            "exit 0\n",
+            name="payload-updater",
+        )
+        self.base_env["FAKE_DURABLE_PAYLOAD"] = payload_path
+        return updater, payload_path
+
+    def test_updater_receives_the_parsed_findings_on_stdin(self):
+        fake = self.write_fake_bin(result_script(MERGE_WITH_FIXES_RESULT))
+        updater, payload_path = self.payload_updater()
+        self.write_profile(
+            fake,
+            extra="AI_REVIEW_MERGE_WITH_FIXES_COMMAND='%s'\n" % updater,
+        )
+        base = self.git_out("rev-parse", "HEAD")
+        head = self.commit_change()
+
+        result = self.run_gate("review", "--base", base, "--head", head)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        with open(payload_path, "r", encoding="utf-8") as handle:
+            raw = handle.read()
+        payload = json.loads(raw)
+
+        self.assertEqual(payload["head"], head)
+        self.assertEqual(payload["verdict"], "MERGE-WITH-FIXES")
+        self.assertEqual(payload["risk_class"], "general")
+        self.assertFalse(payload["truncated"])
+        self.assertEqual(payload["findings_total"], 1)
+
+        expected = MERGE_WITH_FIXES_RESULT["findings"][0]
+        self.assertEqual(len(payload["findings"]), 1)
+        finding = payload["findings"][0]
+        for key in ("severity", "file", "line", "trigger", "consequence", "fix"):
+            self.assertEqual(finding[key], expected[key], key)
+
+        # The reviewer's surrounding prose is untrusted and must never be
+        # copied into a payload a repository will persist.
+        self.assertNotIn("some review prose", raw)
+        self.assertNotIn("raw_text", raw)
+        self.assertNotIn("REVIEW-RESULT-BEGIN", raw)
+
+    def test_payload_truncates_findings_instead_of_growing_unbounded(self):
+        crowded = dict(MERGE_WITH_FIXES_RESULT)
+        crowded["findings"] = [
+            {
+                "severity": "SHOULD-FIX",
+                "file": "file-%d.py" % index,
+                "line": index + 1,
+                "trigger": "trigger %d %s" % (index, "x" * 200),
+                "consequence": "consequence %d" % index,
+                "fix": "fix %d" % index,
+            }
+            for index in range(40)
+        ]
+        fake = self.write_fake_bin(result_script(crowded))
+        updater, payload_path = self.payload_updater()
+        self.write_profile(
+            fake,
+            extra=(
+                "AI_REVIEW_MERGE_WITH_FIXES_COMMAND='%s'\n" % updater
+                + "AI_REVIEW_MAX_PRIOR_REPORT_BYTES=2000\n"
+            ),
+        )
+        base = self.git_out("rev-parse", "HEAD")
+        head = self.commit_change()
+
+        result = self.run_gate("review", "--base", base, "--head", head)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        with open(payload_path, "r", encoding="utf-8") as handle:
+            raw = handle.read()
+        payload = json.loads(raw)
+
+        self.assertLessEqual(len(raw.encode("utf-8")), 2000)
+        self.assertTrue(payload["truncated"])
+        self.assertEqual(payload["findings_total"], 40)
+        self.assertLess(len(payload["findings"]), 40)
+
     def test_fresh_merge_with_fixes_updates_intake_before_cache(self):
         fake = self.write_fake_bin(result_script(MERGE_WITH_FIXES_RESULT))
         updater, log_path = self.durable_updater()
