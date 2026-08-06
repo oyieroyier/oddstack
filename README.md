@@ -516,14 +516,11 @@ installer, snippet, or README change:
 ./package.sh
 ```
 
-Verify the archive entry points and test installation from an extracted archive before committing:
+Verify the archive entry points and test installation from an extracted archive before committing.
+This single command runs syntax checks, both test suites, and the archive check:
 
 ```bash
-./package.sh --check
-bash -n install.sh
-tests/run.sh
-review-hooks/tests/run.sh
-git diff --check
+bash tests/run-all.sh
 ```
 
 When behavior changes, update the relevant skill, this README, and both archives in the same commit.

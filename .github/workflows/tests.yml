@@ -1,0 +1,13 @@
+name: tests
+on:
+  push:
+  pull_request:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run all verification suites
+        run: bash tests/run-all.sh
+      # TODO(DX-05): add a shellcheck step once the warning backlog is triaged.
