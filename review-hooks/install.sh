@@ -259,5 +259,13 @@ else
 fi
 
 echo "[review-hooks] review $profile_dst before enabling AI review"
-echo "[review-hooks] add ai-reviews/ to the target repository's ignore rules"
+
+gitignore_path="$repo_root/.gitignore"
+if grep -qx 'ai-reviews/' "$gitignore_path" 2>/dev/null; then
+  echo "[review-hooks] ai-reviews/ already ignored"
+elif printf 'ai-reviews/\n' >> "$gitignore_path" 2>/dev/null; then
+  echo "[review-hooks] added ai-reviews/ to $gitignore_path"
+else
+  echo "[review-hooks] could not update $gitignore_path; add ai-reviews/ to your ignore rules manually" >&2
+fi
 echo "[review-hooks] deactivate with: $repo_root/review-hooks/install.sh --repo \"$repo_root\" --deactivate"

@@ -71,7 +71,15 @@ class RunEvidence:
 
     def finalize(self, record, report_body):
         """Write the run directory and return the report digest."""
-        os.makedirs(self.run_dir, exist_ok=True)
+        os.makedirs(self.run_dir, mode=0o700, exist_ok=True)
+        # An already-existing ai-reviews/ or runs/ directory keeps whatever
+        # mode it was created with; force both roots private too.
+        for directory in (store.out_dir(self.repo_root),
+                          os.path.join(store.out_dir(self.repo_root), "runs")):
+            try:
+                os.chmod(directory, 0o700)
+            except OSError:
+                pass
 
         attempt_records = []
         for attempt in self.attempts:
@@ -89,9 +97,15 @@ class RunEvidence:
             stderr_path = os.path.join(
                 self.run_dir, "attempt-%d.stderr" % index
             )
-            with open(stdout_path, "wb") as handle:
+            stdout_fd = os.open(
+                stdout_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600
+            )
+            with os.fdopen(stdout_fd, "wb") as handle:
                 handle.write(stdout_data)
-            with open(stderr_path, "wb") as handle:
+            stderr_fd = os.open(
+                stderr_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600
+            )
+            with os.fdopen(stderr_fd, "wb") as handle:
                 handle.write(stderr_data)
             store.atomic_write_json(
                 os.path.join(self.run_dir, "attempt-%d.json" % index),

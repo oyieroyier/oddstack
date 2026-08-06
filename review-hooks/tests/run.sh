@@ -455,6 +455,44 @@ EOF
   fi
 }
 
+test_env_cannot_redirect_the_profile() {
+  local repo
+  local marker
+  local alt_profile
+  repo="$(new_repo env-redirect)"
+  install_generic "$repo"
+  marker="$repo/.marker-created"
+  alt_profile="$test_root/env-redirect-alt.conf"
+  cp "$repo/.review-hooks.conf" "$alt_profile"
+  printf '%s\n' "PRE_COMMIT_COMMANDS='touch \"$marker\"'" >> "$alt_profile"
+
+  printf '%s\n' "safe" > "$repo/redirect.txt"
+  git -C "$repo" add redirect.txt
+  if REVIEW_HOOKS_PROFILE="$alt_profile" \
+    git -C "$repo" commit -qm "Redirect attempt" &&
+    [ ! -e "$marker" ]; then
+    pass "REVIEW_HOOKS_PROFILE cannot redirect which profile governs a commit"
+  else
+    fail "REVIEW_HOOKS_PROFILE cannot redirect which profile governs a commit"
+  fi
+}
+
+test_install_writes_gitignore_entry() {
+  local repo
+  repo="$(new_repo gitignore)"
+
+  if install_generic "$repo" &&
+    [ -f "$repo/.gitignore" ] &&
+    [ "$(grep -cx 'ai-reviews/' "$repo/.gitignore")" -eq 1 ] &&
+    "$module_root/install.sh" \
+      --repo "$repo" --force --profile generic >/dev/null &&
+    [ "$(grep -cx 'ai-reviews/' "$repo/.gitignore")" -eq 1 ]; then
+    pass "install adds an idempotent ai-reviews/ ignore entry"
+  else
+    fail "install adds an idempotent ai-reviews/ ignore entry"
+  fi
+}
+
 test_dry_run
 test_install_and_deactivate
 test_existing_hook_refusal_and_composition
@@ -472,6 +510,8 @@ test_python_review_gate_suite
 test_lmm_page_audit_contract
 test_merge_with_fixes_intake_profiles
 test_hook_commands_all_run_when_one_reads_stdin
+test_env_cannot_redirect_the_profile
+test_install_writes_gitignore_entry
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures of $tests tests failed" >&2
