@@ -105,7 +105,7 @@ run_review_hook_commands() {
   while IFS= read -r command; do
     [ -z "$command" ] && continue
     echo "[review-hooks] $phase: $command"
-    bash -o pipefail -c "$command" || {
+    bash -o pipefail -c "$command" < /dev/null || {
       local status=$?
       echo "[review-hooks] $phase failed (exit $status)" >&2
       return "$status"

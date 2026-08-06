@@ -434,6 +434,27 @@ test_merge_with_fixes_intake_profiles() {
   fi
 }
 
+test_hook_commands_all_run_when_one_reads_stdin() {
+  local repo
+  local marker="$test_root/hook-commands-marker"
+  repo="$(new_repo hook-commands-stdin)"
+  install_generic "$repo"
+
+  cat >> "$repo/.review-hooks.conf" <<EOF
+PRE_COMMIT_COMMANDS='cat > /dev/null
+touch "$marker"'
+EOF
+
+  printf '%s\n' "safe" > "$repo/safe.txt"
+  git -C "$repo" add safe.txt
+  if git -C "$repo" commit -qm "Two commands, first reads stdin" &&
+    [ -f "$marker" ]; then
+    pass "all configured hook commands run even when an earlier one reads stdin"
+  else
+    fail "all configured hook commands run even when an earlier one reads stdin"
+  fi
+}
+
 test_dry_run
 test_install_and_deactivate
 test_existing_hook_refusal_and_composition
@@ -450,6 +471,7 @@ test_doctor_reports_profile_version_one
 test_python_review_gate_suite
 test_lmm_page_audit_contract
 test_merge_with_fixes_intake_profiles
+test_hook_commands_all_run_when_one_reads_stdin
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures of $tests tests failed" >&2
