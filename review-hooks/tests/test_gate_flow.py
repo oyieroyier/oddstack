@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import time
 import unittest
 
@@ -82,6 +83,28 @@ class TestSafeFlow(GateTestCase):
         self.assertTrue(
             os.path.exists(os.path.join(self.repo, "ai-reviews", "latest.md"))
         )
+
+    def test_evidence_files_are_private(self):
+        fake = self.write_fake_bin(result_script(SAFE_RESULT))
+        self.write_profile(fake)
+        base = self.git_out("rev-parse", "HEAD")
+        head = self.commit_change()
+
+        result = self.run_gate("review", "--base", base, "--head", head)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        record = self.latest_run_record()
+        run_dir = os.path.join(
+            self.repo, "ai-reviews", "runs", record["run_id"]
+        )
+
+        def is_owner_only(path):
+            mode = stat.S_IMODE(os.stat(path).st_mode)
+            return mode & 0o077 == 0
+
+        self.assertTrue(is_owner_only(run_dir), run_dir)
+        for name in ("attempt-1.stdout", "attempt-1.stderr"):
+            path = os.path.join(run_dir, name)
+            self.assertTrue(is_owner_only(path), path)
 
 
 class TestBlockingFlow(GateTestCase):

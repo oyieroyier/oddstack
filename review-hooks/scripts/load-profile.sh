@@ -2,11 +2,14 @@
 
 load_review_hooks_profile() {
   local repo_root="$1"
-  local profile_path="${REVIEW_HOOKS_PROFILE:-$repo_root/.review-hooks.conf}"
+  # Repository policy lives at one path. An environment variable must not
+  # be able to substitute a different file to source as trusted policy —
+  # the same rule that keeps AI_REVIEW_CLAUDE_BIN out of caller hands.
+  local profile_path="$repo_root/.review-hooks.conf"
 
   if [ ! -f "$profile_path" ]; then
     echo "[review-hooks] missing profile: $profile_path" >&2
-    echo "[review-hooks] rerun review-hooks/install.sh or set REVIEW_HOOKS_PROFILE" >&2
+    echo "[review-hooks] rerun review-hooks/install.sh" >&2
     return 2
   fi
 

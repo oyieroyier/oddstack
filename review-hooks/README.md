@@ -241,7 +241,9 @@ The skip writes its own evidence run.
 
 Review reports, evidence, cache, and the spend ledger are written to `ai-reviews/`. Add that
 directory to the target repository's ignore rules unless the repository deliberately versions
-review evidence.
+review evidence. Installation appends `ai-reviews/` to the target repository's `.gitignore`
+automatically, and evidence files (the run directory and each attempt's stdout/stderr) are
+created owner-only.
 
 ## Deactivate
 
