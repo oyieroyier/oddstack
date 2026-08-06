@@ -148,6 +148,20 @@ context. Because the profile is trusted executable policy, changing the command 
 cached decisions. The generic profile leaves it empty; a consumer must own the destination,
 reconciliation rules, secret handling, and generated-file commit flow.
 
+### Upgrading to 2.2.0
+
+Two behaviors changed for anyone on 2.1.x. Neither is a profile-version change; both take effect
+as soon as the runtime is upgraded.
+
+- `REVIEW_HOOKS_PROFILE` is gone. It let the caller's environment choose which file was sourced as
+  trusted policy — the same class of hole that `AI_REVIEW_CLAUDE_BIN` is unset to close. Repository
+  policy is now always `<repo>/.review-hooks.conf`. A set value that names any other path refuses
+  the hook with migration guidance rather than being ignored, so nobody commits believing a policy
+  file governed when it did not. Unset it and move the policy to the canonical path.
+- Installation now appends `ai-reviews/` to the target repository's `.gitignore` instead of
+  printing a reminder, and evidence files are created owner-only. If the repository deliberately
+  versions review evidence, remove the entry after installing.
+
 ### Migrating from version 1
 
 Version 1 profiles still load for one release, with a warning. Two meanings changed:

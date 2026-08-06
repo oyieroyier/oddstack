@@ -468,12 +468,40 @@ test_env_cannot_redirect_the_profile() {
 
   printf '%s\n' "safe" > "$repo/redirect.txt"
   git -C "$repo" add redirect.txt
-  if REVIEW_HOOKS_PROFILE="$alt_profile" \
-    git -C "$repo" commit -qm "Redirect attempt" &&
-    [ ! -e "$marker" ]; then
+  # A redirect attempt is refused loudly, not ignored: a caller who thinks
+  # their profile governs must not be told the commit passed under a
+  # different policy.
+  if ! REVIEW_HOOKS_PROFILE="$alt_profile" \
+    git -C "$repo" commit -qm "Redirect attempt" 2>"$test_root/redirect.err" &&
+    [ ! -e "$marker" ] &&
+    grep -q "REVIEW_HOOKS_PROFILE is no longer supported" "$test_root/redirect.err"; then
     pass "REVIEW_HOOKS_PROFILE cannot redirect which profile governs a commit"
   else
     fail "REVIEW_HOOKS_PROFILE cannot redirect which profile governs a commit"
+  fi
+
+  # The canonical path is not a redirect, so it must still work.
+  if REVIEW_HOOKS_PROFILE="$repo/.review-hooks.conf" \
+    git -C "$repo" commit -qm "Canonical path is accepted"; then
+    pass "REVIEW_HOOKS_PROFILE naming the canonical profile is accepted"
+  else
+    fail "REVIEW_HOOKS_PROFILE naming the canonical profile is accepted"
+  fi
+}
+
+test_runtime_version_matches_the_bundle_version() {
+  local bundle_version
+  local runtime_version
+  bundle_version="$(cat "$module_root/VERSION")"
+  runtime_version="$(sed -n 's/^RUNTIME_VERSION = "\(.*\)"$/\1/p' \
+    "$module_root/review_gate/__init__.py")"
+
+  # RUNTIME_VERSION labels every run.json; the schema versions next to it
+  # are separate constants, so this one must track the bundle it ships in.
+  if [ -n "$runtime_version" ] && [ "$runtime_version" = "$bundle_version" ]; then
+    pass "runtime version matches the bundle version"
+  else
+    fail "runtime version matches the bundle version ($runtime_version vs $bundle_version)"
   fi
 }
 
@@ -512,6 +540,7 @@ test_merge_with_fixes_intake_profiles
 test_hook_commands_all_run_when_one_reads_stdin
 test_env_cannot_redirect_the_profile
 test_install_writes_gitignore_entry
+test_runtime_version_matches_the_bundle_version
 
 if [ "$failures" -gt 0 ]; then
   echo "$failures of $tests tests failed" >&2

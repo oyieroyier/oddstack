@@ -7,6 +7,20 @@ load_review_hooks_profile() {
   # the same rule that keeps AI_REVIEW_CLAUDE_BIN out of caller hands.
   local profile_path="$repo_root/.review-hooks.conf"
 
+  # REVIEW_HOOKS_PROFILE used to choose that file. Honoring it again would
+  # reopen the hole; ignoring it silently would run policy the caller did
+  # not intend while they believed otherwise. Refuse loudly instead, unless
+  # the value already names the one canonical path. No normalization: an
+  # alias or symlink fails conservatively rather than being accepted.
+  if [ -n "${REVIEW_HOOKS_PROFILE:-}" ] &&
+    [ "$REVIEW_HOOKS_PROFILE" != "$profile_path" ]; then
+    echo "[review-hooks] REVIEW_HOOKS_PROFILE is no longer supported" >&2
+    echo "[review-hooks] repository policy is always $profile_path" >&2
+    echo "[review-hooks] unset REVIEW_HOOKS_PROFILE and move any policy there" >&2
+    return 2
+  fi
+  unset REVIEW_HOOKS_PROFILE
+
   if [ ! -f "$profile_path" ]; then
     echo "[review-hooks] missing profile: $profile_path" >&2
     echo "[review-hooks] rerun review-hooks/install.sh" >&2
