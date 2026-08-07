@@ -273,6 +273,23 @@ When enabled, the gate:
 - writes `ai-reviews/runs/<run-id>/` evidence for every decision, including `INCONCLUSIVE`;
 - exits 0 (accepted), 1 (blocking findings), or 2 (no trustworthy decision).
 
+### Reviewer envelope semantics
+
+The gate trusts only the CLI's captured success envelope shape (`type: "result"`,
+`subtype: "success"`, `is_error: false`, string `result`, and no error discriminator —
+no numeric `api_error_status`, no non-completed terminal reason). Any other envelope fails closed
+under a semantic reason code recorded in the run evidence: `rate_limited`,
+`budget_exhausted`, `authentication_failed`, `provider_unavailable`, `provider_error`, or
+`invalid_envelope`. An error envelope that embeds syntactically valid review text is still
+refused — reviewer errors can never become decisions. Classification is structural
+(numeric `api_error_status`, captured subtype/terminal-reason discriminators), never prose,
+and applies identically whether the CLI exits zero or nonzero; a reported cost inside a
+rejected envelope still settles the spend ledger. Gate-initiated terminations (deadline,
+output overflow, interrupt) keep their process-level reason codes: an envelope drained
+from a killed process does not classify the failure. None of these reasons retries and
+none is a skip — the push stays blocked until a completed review or an explicit,
+evidence-recorded operator skip.
+
 ### Changes the gate refuses to review
 
 The prompt embeds the diff inside reserved data tags and a result sentinel. A diff whose content

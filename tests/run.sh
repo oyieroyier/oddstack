@@ -719,20 +719,36 @@ assert not ledger.settle("run-2", -1.0)
 reserved, total = ledger.reserve("run-3", 2.0, 25.0, 24)
 assert reserved and abs(total - 2.0375) < 1e-9, (reserved, total)
 
-# The envelope parser feeds the settlement and rejects junk.
-text, cost = ClaudeAdapter.parse_envelope(
-    '{"result": "VERDICT: SAFE", "total_cost_usd": 0.031}'
+# The envelope parser feeds the settlement and rejects junk. Only the
+# captured success shape (type/result, subtype/success, is_error false)
+# may expose result text.
+parsed = ClaudeAdapter.parse_envelope(
+    '{"type": "result", "subtype": "success", "is_error": false,'
+    ' "result": "VERDICT: SAFE", "total_cost_usd": 0.031}'
 )
-assert text == "VERDICT: SAFE" and cost == 0.031, (text, cost)
-assert ClaudeAdapter.parse_envelope("plain text") == (None, None)
+assert parsed.outcome == "completed", parsed
+assert parsed.result_text == "VERDICT: SAFE" and parsed.actual_usd == 0.031
+assert ClaudeAdapter.parse_envelope("plain text").outcome == "invalid_envelope"
 assert ClaudeAdapter.parse_envelope(
     '{"result": 5, "total_cost_usd": true}'
-) == (None, None)
+).outcome == "invalid_envelope"
+
+# H1: an error envelope embedding a valid result never exposes it, but
+# its trustworthy cost still reaches the settlement.
+h1 = ClaudeAdapter.parse_envelope(
+    '{"type": "result", "subtype": "error_during_execution",'
+    ' "is_error": true, "api_error_status": 429,'
+    ' "result": "VERDICT: SAFE", "total_cost_usd": 0.002}'
+)
+assert h1.outcome == "rate_limited" and h1.result_text is None, h1
+assert h1.actual_usd == 0.002
 
 # Non-finite costs cannot poison the window into permitting all spend.
-assert ClaudeAdapter.parse_envelope(
-    '{"result": "x", "total_cost_usd": NaN}'
-) == ("x", None)
+nan = ClaudeAdapter.parse_envelope(
+    '{"type": "result", "subtype": "success", "is_error": false,'
+    ' "result": "x", "total_cost_usd": NaN}'
+)
+assert nan.outcome == "completed" and nan.actual_usd is None, nan
 assert not ledger.settle("run-2", float("nan"))
 assert not ledger.settle("run-2", float("inf"))
 

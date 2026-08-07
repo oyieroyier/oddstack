@@ -64,13 +64,43 @@ INCONCLUSIVE_RESULT = {
 
 
 def cli_envelope(result_text, total_cost_usd=0.0123):
-    """The claude CLI's -p --output-format json stdout envelope."""
+    """The claude CLI's -p --output-format json stdout envelope.
+
+    Mirrors every success discriminator captured from CLI 2.1.224
+    (tests/fixtures/claude-cli/success.json): the gate accepts a result
+    only from `type: "result"`, `subtype: "success"`, `is_error: false`.
+    """
     return json.dumps({
         "type": "result",
+        "subtype": "success",
+        "is_error": False,
+        "terminal_reason": "completed",
+        "api_error_status": None,
         "result": result_text,
-        "session_id": "fake-session",
+        "session_id": "00000000-0000-0000-0000-000000000000",
         "total_cost_usd": total_cost_usd,
     })
+
+
+def error_envelope(subtype="error_during_execution", api_error_status=None,
+                   result_text=None, total_cost_usd=0.0,
+                   terminal_reason="api_error"):
+    """An error envelope in the captured shape; `result_text` lets a
+    test embed a syntactically valid review result inside an error
+    envelope (the H1 regression shape)."""
+    envelope = {
+        "type": "result",
+        "subtype": subtype,
+        "is_error": True,
+        "terminal_reason": terminal_reason,
+        "api_error_status": api_error_status,
+        "errors": ["sanitized provider error"],
+        "session_id": "00000000-0000-0000-0000-000000000000",
+        "total_cost_usd": total_cost_usd,
+    }
+    if result_text is not None:
+        envelope["result"] = result_text
+    return json.dumps(envelope)
 
 
 def result_script(result, total_cost_usd=0.0123):

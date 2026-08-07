@@ -10,7 +10,7 @@ import sys
 import time
 
 from . import durable, evidence, gitwork, prompts, results, store, supervisor
-from .adapter import ClaudeAdapter
+from .adapter import ClaudeAdapter, EnvelopeParse
 from .gitwork import ReviewTarget, TargetError
 from .policy import PolicyError
 from .prompts import PromptError, SensitivePathError
@@ -626,39 +626,70 @@ class Gate:
 
             stdout_text = outcome.stdout_data.decode("utf-8", errors="replace")
             if self.adapter.emits_envelope():
-                result_text, attempt_cost = self.adapter.parse_envelope(
-                    stdout_text
-                )
+                parsed = self.adapter.parse_envelope(stdout_text)
             else:
-                result_text, attempt_cost = stdout_text, None
-            attempt_costs.append((attempt_cost, outcome.started))
+                # Version 1 keeps the plain-stdout contract; the whole
+                # stream is the result and carries no cost or semantics.
+                parsed = EnvelopeParse(
+                    outcome="completed", result_text=stdout_text
+                )
+            attempt_costs.append((parsed.actual_usd, outcome.started))
 
             if outcome.completed_cleanly:
-                try:
-                    if result_text is None:
-                        raise ResultError(
-                            "reviewer stdout is not a CLI result envelope"
+                if parsed.outcome != "completed":
+                    # A clean exit with an error or invalid envelope is
+                    # terminal under its semantic reason. An embedded
+                    # result inside an error envelope never reaches the
+                    # result parser (H1).
+                    ev.record_attempt(
+                        attempt_index, outcome, parsed.outcome, attempt_cap,
+                        actual_usd=parsed.actual_usd,
+                    )
+                    terminal_reason = parsed.outcome
+                    terminal_detail = (
+                        "reviewer envelope reported %s "
+                        "(subtype=%s api_error_status=%s)"
+                        % (
+                            parsed.outcome, parsed.subtype,
+                            parsed.provider_status,
                         )
+                    )
+                    break
+                try:
                     result = results.parse_result(
-                        result_text, policy.prompt_template_version
+                        parsed.result_text, policy.prompt_template_version
                     )
                     ev.record_attempt(
                         attempt_index, outcome, "completed", attempt_cap,
-                        actual_usd=attempt_cost,
+                        actual_usd=parsed.actual_usd,
                     )
                 except ResultError as err:
                     ev.record_attempt(
                         attempt_index, outcome, "invalid_result", attempt_cap,
-                        actual_usd=attempt_cost,
+                        actual_usd=parsed.actual_usd,
                     )
                     terminal_reason = "invalid_result"
                     terminal_detail = str(err)
                 break
 
             reason = self.adapter.classify_failure(outcome)
+            if (
+                reason == "unknown_infrastructure"
+                and self.adapter.emits_envelope()
+                and parsed.outcome not in ("completed", "invalid_envelope")
+            ):
+                # The reviewer terminated itself but left a structured
+                # error envelope; its semantic classification is more
+                # precise than the bare exit code, so exit-zero and
+                # nonzero error envelopes classify identically.
+                # Gate-initiated terminations (timeout, overflow,
+                # interrupt, unverified cleanup) stay authoritative: an
+                # envelope drained from a killed process is not
+                # trustworthy evidence of the terminal cause.
+                reason = parsed.outcome
             ev.record_attempt(
                 attempt_index, outcome, reason, attempt_cap,
-                actual_usd=attempt_cost,
+                actual_usd=parsed.actual_usd,
             )
             if (
                 reason == "startup_transport"

@@ -10,6 +10,34 @@ import json
 import math
 import os
 import shutil
+from dataclasses import dataclass
+
+# Error classification is structural, never prose. These statuses are
+# documented provider semantics, not yet locally captured (the 429 and
+# 5xx capture legs are blocked; see tests/fixtures/claude-cli/README.md).
+# The distinct outcome names exist so run evidence records *why* an
+# attempt failed, not to drive any differing gate behavior.
+_TRANSIENT_PROVIDER_STATUSES = frozenset({503, 529})
+_AUTH_STATUSES = frozenset({401, 403})
+
+
+@dataclass
+class EnvelopeParse:
+    """Semantic interpretation of one CLI stdout envelope.
+
+    `result_text` is populated only for `completed`; an error envelope
+    never exposes its text to the review-result parser. `actual_usd`
+    carries any well-formed, finite, non-negative cost the envelope
+    reported — on every outcome, including rejected and invalid
+    envelopes. Settlement may charge a reported cost even when the
+    decision trusts nothing else in the envelope.
+    """
+
+    outcome: str
+    result_text: str = None
+    actual_usd: float = None
+    provider_status: int = None
+    subtype: str = None
 
 
 class ClaudeAdapter:
@@ -51,29 +79,88 @@ class ClaudeAdapter:
 
     @staticmethod
     def parse_envelope(stdout_text):
-        """Split the CLI's JSON envelope into (result_text, actual_usd).
+        """Classify the CLI's JSON envelope into an EnvelopeParse.
 
-        Either element is None when the envelope does not carry it.
-        Malformed stdout returns (None, None): the review result stays
-        untrusted and the ledger keeps charging the assigned cap. A
-        non-finite cost is unusable — NaN poisons the ledger sum and
-        disables the rolling limit — so it stays None as well.
+        The success shape is exactly the one captured from the installed
+        CLI (2.1.224): `type: "result"`, `subtype: "success"`,
+        `is_error: false`, string `result`. Everything else is an error
+        or invalid envelope and can never produce a review decision —
+        an error envelope that happens to embed a syntactically valid
+        review result is still rejected (H1).
+
+        Error classification is structural only: numeric
+        `api_error_status` plus captured subtype/terminal_reason
+        discriminators (budget exhaustion and transport failure were
+        captured locally; the status-code legs rest on documented
+        semantics until their captures unblock). Prose (stderr,
+        `errors` strings) never classifies. A non-finite or negative cost is unusable — NaN
+        poisons the ledger sum and disables the rolling limit — so it
+        stays None.
         """
         try:
             data = json.loads(stdout_text)
         except (json.JSONDecodeError, UnicodeDecodeError):
-            return None, None
+            return EnvelopeParse(outcome="invalid_envelope")
         if not isinstance(data, dict):
-            return None, None
-        text = data.get("result")
-        if not isinstance(text, str):
-            text = None
+            return EnvelopeParse(outcome="invalid_envelope")
+
         cost = data.get("total_cost_usd")
         if isinstance(cost, bool) or not isinstance(cost, (int, float)):
             cost = None
         elif not math.isfinite(cost) or cost < 0:
             cost = None
-        return text, cost
+        else:
+            cost = float(cost)
+
+        subtype = data.get("subtype")
+        if not isinstance(subtype, str):
+            subtype = None
+        status = data.get("api_error_status")
+        if isinstance(status, bool) or not isinstance(status, int):
+            status = None
+        is_error = data.get("is_error")
+
+        common = dict(
+            actual_usd=cost, provider_status=status, subtype=subtype
+        )
+        if data.get("type") != "result" or not isinstance(is_error, bool):
+            return EnvelopeParse(outcome="invalid_envelope", **common)
+
+        if not is_error:
+            result = data.get("result")
+            terminal_reason = data.get("terminal_reason")
+            if (
+                subtype == "success"
+                and isinstance(result, str)
+                # A claimed success carrying any error discriminator —
+                # a numeric provider status or a non-completed terminal
+                # reason — is contradictory; neither side is trusted,
+                # so the embedded result never reaches the parser.
+                and status is None
+                and terminal_reason in (None, "completed")
+            ):
+                return EnvelopeParse(
+                    outcome="completed", result_text=result, **common
+                )
+            # A claimed success without the captured success shape is
+            # contradictory, not trustworthy.
+            return EnvelopeParse(outcome="invalid_envelope", **common)
+
+        if subtype == "success":
+            # is_error with a success subtype is contradictory.
+            return EnvelopeParse(outcome="invalid_envelope", **common)
+        if (
+            subtype == "error_max_budget_usd"
+            or data.get("terminal_reason") == "budget_exhausted"
+        ):
+            return EnvelopeParse(outcome="budget_exhausted", **common)
+        if status in _AUTH_STATUSES:
+            return EnvelopeParse(outcome="authentication_failed", **common)
+        if status == 429:
+            return EnvelopeParse(outcome="rate_limited", **common)
+        if status in _TRANSIENT_PROVIDER_STATUSES:
+            return EnvelopeParse(outcome="provider_unavailable", **common)
+        return EnvelopeParse(outcome="provider_error", **common)
 
     def capability_fingerprint(self):
         """Fingerprint of the reviewer executable.

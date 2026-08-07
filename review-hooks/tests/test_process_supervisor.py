@@ -381,5 +381,75 @@ class TestInterruption(GateTestCase):
         self.assertEqual(record["decision"]["reason_code"], "interrupted")
 
 
+_HELPERS_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "spikes", "helpers"
+)
+
+
+class TestContainmentControls(GateTestCase):
+    """Reusable containment controls for any reviewer backend spike.
+
+    The positive control proves the group kill reaps a stubborn but
+    ordinary descendant. The negative control proves the documented
+    limitation is real — a setsid() escapee survives group containment
+    and only an external survivor scan can see it — and validates that
+    scan by catching the escapee it plants."""
+
+    def _reviewer_with_helper(self, helper, pid_file):
+        return (
+            "#!/usr/bin/env bash\n"
+            'echo "$$" >> "$FAKE_CALL_LOG"\n'
+            "cat >/dev/null\n"
+            'python3 "%s" "%s" &\n'
+            "sleep 120\n"
+        ) % (os.path.join(_HELPERS_DIR, helper), pid_file)
+
+    def _run_gate_with_helper(self, helper, pid_file):
+        fake = self.write_fake_bin(
+            self._reviewer_with_helper(helper, pid_file)
+        )
+        self.write_profile(fake, extra=(
+            "AI_REVIEW_TOTAL_TIMEOUT=3\n"
+            "AI_REVIEW_KILL_GRACE=1\n"
+        ))
+        base = self.git_out("rev-parse", "HEAD")
+        head = self.commit_change()
+        result = self.run_gate("review", "--base", base, "--head", head)
+        self.assertEqual(result.returncode, 2)
+        self.assertTrue(os.path.exists(pid_file), "helper never started")
+        with open(pid_file, "r", encoding="utf-8") as handle:
+            return int(handle.read().strip())
+
+    def test_ordinary_descendant_is_reaped(self):
+        pid = self._run_gate_with_helper(
+            "ordinary_descendant.py", os.path.join(self.root, "ordinary.pid")
+        )
+        self.assertTrue(
+            _wait_dead(pid), "ordinary descendant %d survived" % pid
+        )
+        record = self.latest_run_record()
+        self.assertTrue(record["attempts"][0]["cleanup_verified"])
+
+    def test_setsid_escape_defeats_group_containment(self):
+        pid = self._run_gate_with_helper(
+            "setsid_escape.py", os.path.join(self.root, "escape.pid")
+        )
+        try:
+            # The documented limitation: the escapee is alive after a
+            # verified group cleanup. cleanup_verified stays scoped to
+            # the group and must not be read as machine-wide truth.
+            self.assertFalse(
+                _pid_dead(pid),
+                "escapee died under group kill; the negative control "
+                "no longer validates the external survivor scan",
+            )
+        finally:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        self.assertTrue(_wait_dead(pid), "failed to reap negative control")
+
+
 if __name__ == "__main__":
     unittest.main()

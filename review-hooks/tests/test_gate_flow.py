@@ -16,7 +16,12 @@ from gate_test_util import (
     MERGE_WITH_FIXES_RESULT,
     SAFE_RESULT,
     cli_envelope,
+    error_envelope,
     result_script,
+)
+
+FIXTURES_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "fixtures", "claude-cli"
 )
 
 
@@ -1084,6 +1089,174 @@ class TestPolicyValidation(GateTestCase):
             result = self.run_gate("review", "--base", base, "--head", head)
             self.assertEqual(result.returncode, 2, extra)
             self.assertEqual(self.call_count(), 0, extra)
+
+
+class TestEnvelopeSemantics(GateTestCase):
+    """E1 hardening: only the captured success envelope shape can produce
+    a decision; every error envelope fails closed under its semantic
+    reason, at exit zero and nonzero alike."""
+
+    def envelope_script(self, envelope_text, exit_code=0):
+        return (
+            "#!/usr/bin/env bash\n"
+            "cat >/dev/null\n"
+            'echo "$$" >> "$FAKE_CALL_LOG"\n'
+            "cat <<'ENVELOPE'\n"
+            "%s\n"
+            "ENVELOPE\n"
+            "exit %d\n"
+        ) % (envelope_text, exit_code)
+
+    def fixture_script(self, name, exit_code=0):
+        with open(os.path.join(FIXTURES_DIR, name), encoding="utf-8") as fh:
+            return self.envelope_script(fh.read(), exit_code)
+
+    def run_review(self, script):
+        fake = self.write_fake_bin(script)
+        self.write_profile(fake)
+        base = self.git_out("rev-parse", "HEAD")
+        head = self.commit_change()
+        return self.run_gate("review", "--base", base, "--head", head)
+
+    def assert_refused(self, result, reason_code):
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(self.cache_entries(), [])
+        record = self.latest_run_record()
+        self.assertEqual(record["decision"]["reason_code"], reason_code)
+        return record
+
+    def valid_safe_result_text(self):
+        return (
+            "prose\nREVIEW-RESULT-BEGIN\n%s\nREVIEW-RESULT-END"
+            % json.dumps(SAFE_RESULT)
+        )
+
+    def ledger_entries(self):
+        path = os.path.join(
+            self.repo, "ai-reviews", "spend", "ledger.jsonl"
+        )
+        with open(path, encoding="utf-8") as handle:
+            return [json.loads(line) for line in handle if line.strip()]
+
+    def test_h1_error_envelope_with_valid_result_never_passes(self):
+        # Pre-H1, this exact shape passed the gate and entered the
+        # decision cache (demonstrated live against the unhardened
+        # parser on 2026-08-07).
+        script = self.envelope_script(error_envelope(
+            api_error_status=429,
+            result_text=self.valid_safe_result_text(),
+            total_cost_usd=0.002,
+        ))
+        self.assert_refused(self.run_review(script), "rate_limited")
+
+    def test_captured_success_fixture_still_passes(self):
+        result = self.run_review(self.fixture_script("success.json"))
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(len(self.cache_entries()), 1)
+
+    def test_error_fixtures_classify_identically_at_both_exit_codes(self):
+        # The budget capture really exited 1 and the transport-failure
+        # capture died at the gate deadline; a clean fake exit proves
+        # the envelope, not the exit code, drives classification.
+        cases = [
+            ("budget-exhausted.json", "budget_exhausted"),
+            ("rate-limited.json", "rate_limited"),
+            ("partial-result.json", "provider_error"),
+        ]
+        for fixture, reason in cases:
+            for exit_code in (0, 1):
+                with self.subTest(fixture=fixture, exit_code=exit_code):
+                    self.setUp()
+                    result = self.run_review(
+                        self.fixture_script(fixture, exit_code=exit_code)
+                    )
+                    self.assert_refused(result, reason)
+
+    def test_status_code_branches_classify_semantically(self):
+        cases = [
+            (401, "authentication_failed"),
+            (403, "authentication_failed"),
+            (503, "provider_unavailable"),
+            (529, "provider_unavailable"),
+        ]
+        for status, reason in cases:
+            with self.subTest(status=status):
+                self.setUp()
+                script = self.envelope_script(error_envelope(
+                    api_error_status=status,
+                    result_text=self.valid_safe_result_text(),
+                ))
+                self.assert_refused(self.run_review(script), reason)
+
+    def test_truncated_envelope_is_invalid_envelope(self):
+        with open(os.path.join(FIXTURES_DIR, "success.json"),
+                  encoding="utf-8") as fh:
+            truncated = fh.read()[:200]
+        result = self.run_review(self.envelope_script(truncated))
+        self.assert_refused(result, "invalid_envelope")
+
+    def test_unknown_error_subtype_is_provider_error(self):
+        script = self.envelope_script(error_envelope(
+            subtype="error_new_unknown_kind"
+        ))
+        self.assert_refused(self.run_review(script), "provider_error")
+
+    def test_contradictory_fields_fail_closed(self):
+        # A success claim carrying any error discriminator is never
+        # trusted, whichever side of the envelope carries the claim.
+        contradictions = [
+            # is_error true with a success subtype.
+            {"is_error": True},
+            # Claimed success with a provider error status.
+            {"api_error_status": 429},
+            # Claimed success with an error terminal reason.
+            {"terminal_reason": "budget_exhausted"},
+        ]
+        for overrides in contradictions:
+            with self.subTest(**overrides):
+                self.setUp()
+                envelope = {
+                    "type": "result", "subtype": "success",
+                    "is_error": False, "terminal_reason": "completed",
+                    "result": self.valid_safe_result_text(),
+                    "total_cost_usd": 0.002,
+                }
+                envelope.update(overrides)
+                script = self.envelope_script(json.dumps(envelope))
+                self.assert_refused(
+                    self.run_review(script), "invalid_envelope"
+                )
+
+    def test_success_without_discriminators_fails_closed(self):
+        # The pre-hardening minimal shape: result present, no subtype
+        # or is_error. No longer trusted.
+        script = self.envelope_script(json.dumps({
+            "type": "result",
+            "result": self.valid_safe_result_text(),
+            "total_cost_usd": 0.002,
+        }))
+        self.assert_refused(self.run_review(script), "invalid_envelope")
+
+    def test_error_envelope_cost_settles_reservation(self):
+        script = self.envelope_script(error_envelope(
+            api_error_status=429, total_cost_usd=0.002,
+        ))
+        self.assert_refused(self.run_review(script), "rate_limited")
+        entries = self.ledger_entries()
+        self.assertEqual(len(entries), 2)
+        self.assertIsNone(entries[0]["actual_usd"])
+        self.assertAlmostEqual(entries[1]["actual_usd"], 0.002)
+
+    def test_missing_cost_keeps_assigned_reservation(self):
+        script = self.envelope_script(error_envelope(
+            api_error_status=429, total_cost_usd=None,
+        ))
+        self.assert_refused(self.run_review(script), "rate_limited")
+        entries = self.ledger_entries()
+        # No settlement: the conservative reservation stands.
+        self.assertEqual(len(entries), 1)
+        self.assertIsNone(entries[0]["actual_usd"])
+        self.assertEqual(entries[0]["assigned_usd"], 2.0)
 
 
 if __name__ == "__main__":
