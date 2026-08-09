@@ -154,6 +154,10 @@ if [ "$session_policy" = "fresh-each-round" ] && [ -n "$resume_id" ]; then
   echo "[peer-codex] fresh-each-round forbids --resume" >&2
   exit 2
 fi
+if [ -n "$resume_id" ] && ! [[ "$resume_id" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]]; then
+  echo "[peer-codex] --resume must be an alphanumeric session id" >&2
+  exit 2
+fi
 
 echo "[peer-codex] repository: $repo_root"
 echo "[peer-codex] deliberation: ${deliberation_path#"$repo_root"/}"
@@ -174,12 +178,21 @@ event_file="$(mktemp)"
 output_file="$(mktemp)"
 trap 'rm -f "$event_file" "$output_file"' EXIT
 if [ -n "$resume_id" ]; then
-  codex_args=(exec resume --json -o "$output_file")
+  # `codex exec resume` does not accept the top-level `-s` flag. Pin the
+  # equivalent config values so a resumed peer cannot inherit write access.
+  codex_args=(
+    exec resume --json -o "$output_file"
+    -c 'sandbox_mode="read-only"'
+    -c 'approval_policy="never"'
+  )
   [ -z "$model" ] || codex_args+=(-m "$model")
   [ -z "$effort" ] || codex_args+=(-c "model_reasoning_effort=\"$effort\"")
   codex_args+=("$resume_id" -)
 else
-  codex_args=(exec --json -o "$output_file" -s read-only -C "$repo_root")
+  codex_args=(
+    exec --json -o "$output_file" -s read-only -C "$repo_root"
+    -c 'approval_policy="never"'
+  )
   [ -z "$model" ] || codex_args+=(-m "$model")
   [ -z "$effort" ] || codex_args+=(-c "model_reasoning_effort=\"$effort\"")
   [ "$session_policy" != "ephemeral" ] || codex_args+=(--ephemeral)
