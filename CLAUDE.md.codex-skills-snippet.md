@@ -15,6 +15,11 @@ Use these skills when appropriate:
 - `ui-nitpicker`: exacting design-engineer review and plan-first implementation of UIs. Use for design critiques of screenshots or frontend code, design-spec enforcement (spec deviations always block), user-journey and next-action review, and authoring architecture + implementation plans before building UI features.
 - `deliberate-with-peer`: run a bounded, repository-grounded Claude–Codex deliberation with a
   durable disagreement ledger, explicit sessions, and resumable capacity handling.
+- `collab-config`: view or change every bundle setting — peer models, effort, budgets, model
+  pricing, and the peer-audit policy — and inspect what a skill will actually use, including any
+  repository tightening from `.codex-claude-skills.json`.
+- `session-handoff`: write a resumable handoff to `plans/agent-handoffs/` and end an expensive or
+  drifted session cleanly instead of letting context costs compound.
 
 General rules:
 

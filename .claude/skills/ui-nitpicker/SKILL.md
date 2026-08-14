@@ -56,9 +56,13 @@ Never write feature code cold. For any non-trivial UI feature:
 Resolve the peer-audit policy in this order:
 
 1. explicit user instruction;
-2. repository guidance;
-3. `peerAudit.policy` in `~/.config/codex-claude-skills/preferences.json`;
-4. `offer`.
+2. `peerAudit.policy` in the repository's `.codex-claude-skills.json`, which may only strengthen
+   the operator's preference (`required` > `offer` > `off`) — the `collab-config` resolver
+   (`python3 .claude/skills/collab-config/scripts/resolve_config.py --policy peerAudit`) merges
+   this and refuses a weakening loudly;
+3. other repository guidance;
+4. `peerAudit.policy` in `~/.config/codex-claude-skills/preferences.json`;
+5. `offer`.
 
 `required` runs the audit unless the user explicitly skips it and records why. `offer` reports the
 available audit without consuming Codex quota implicitly. `off` records that peer audit is disabled.

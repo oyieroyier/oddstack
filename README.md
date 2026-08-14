@@ -30,6 +30,8 @@ but does not activate it or change Git configuration.
 | `deliberate-with-peer`        | Either      | Other model  | Grounded proposals, critique, adjudication, and bounded consensus            |
 | `route-codex-subagents`       | Codex       | Codex        | Cost-aware Sol/Terra routing for explicitly requested internal delegation     |
 | `setup-collaboration-hooks`   | Codex       | —            | Safe installation, adaptation, composition, and deactivation of review hooks |
+| `collab-config`               | Either      | —            | View or change every bundle setting: models, budgets, rates, audit policy    |
+| `session-handoff`             | Either      | —            | Write a resumable handoff and end an expensive session cleanly               |
 
 ## How the two-way workflow works
 
@@ -157,13 +159,17 @@ bash -n .agents/skills/delegate-frontend-to-claude/scripts/run-claude-frontend.s
 Expected skill entry points:
 
 ```text
+.agents/skills/collab-config/SKILL.md
 .agents/skills/delegate-frontend-to-claude/SKILL.md
 .agents/skills/deliberate-with-peer/SKILL.md
+.agents/skills/session-handoff/SKILL.md
 .agents/skills/setup-collaboration-hooks/SKILL.md
 .claude/skills/codex-computer-use/SKILL.md
+.claude/skills/collab-config/SKILL.md
 .claude/skills/deliberate-with-peer/SKILL.md
 .claude/skills/codex-implementation/SKILL.md
 .claude/skills/codex-review/SKILL.md
+.claude/skills/session-handoff/SKILL.md
 .claude/skills/ui-nitpicker/SKILL.md
 ```
 
@@ -431,6 +437,126 @@ the active spawn contract permits them, tracks concurrent and cumulative fan-out
 the acceptance-ledger and escalation contract. Installing the bundle makes the workflow available
 without changing personal Codex model or quota settings.
 
+## Configuration
+
+One file owns every setting: `~/.config/codex-claude-skills/preferences.json`. Skills read
+resolved values from it instead of naming a model, provider, or budget directly, so changing what
+a skill uses is a configuration edit rather than a code edit.
+
+```bash
+mkdir -p ~/.config/codex-claude-skills
+cp preferences.example.json ~/.config/codex-claude-skills/preferences.json
+```
+
+Then edit it directly, or ask the bundle: `/collab-config` in Claude Code, `$collab-config` in
+Codex.
+
+### Changing which model does what
+
+`claude` and `codex` set provider defaults; `skills` overrides per skill, because one provider can
+serve different work with different models:
+
+```json
+{
+  "claude": { "model": "claude-fable-5", "effort": "xhigh" },
+  "codex":  { "model": "gpt-5.6-sol", "effort": "high" },
+  "skills": {
+    "codex-review": { "model": "gpt-5.6-terra", "effort": "medium" }
+  }
+}
+```
+
+Resolution walks skill → provider and stops. A field absent at every level stays absent, so an
+unconfigured model falls through to whatever the CLI itself defaults to — the bundle never invents
+one. An explicit `null` means unset: it falls through to the next level and cannot dodge a
+repository cap. Explicit runner flags and explicit user instructions outrank the file. Inspect
+what a skill will actually use:
+
+```bash
+resolver=.claude/skills/collab-config/scripts/resolve_config.py
+python3 "$resolver" --skill codex-review
+python3 "$resolver" --skill deliberate-with-peer --provider codex
+python3 "$resolver" --policy peerAudit
+python3 "$resolver" --show
+```
+
+No model list is validated anywhere. New models, renamed models, and provider-specific
+identifiers all work by putting the string in the config.
+
+### Pricing a model the bundle has never heard of
+
+Cost reporting is the one place that needs a price, and the bundle ships no built-in price table —
+prices change faster than releases. Rather than fail or guess, a model without a `modelRates`
+entry reports tokens only and says how to price it:
+
+```json
+{
+  "modelRates": {
+    "claude-fable-5": { "input": 5.00, "output": 25.00 }
+  }
+}
+```
+
+Rates are USD per million tokens. Cache pricing defaults to the standard multipliers (read 0.1×,
+5-minute write 1.25×, 1-hour write 2× of input) and each may be overridden per entry with
+`cacheRead`, `cacheWrite5m`, or `cacheWrite1h`. A malformed entry is dropped with a warning rather
+than half-applied.
+
+### Repository tightening
+
+A repository may ship `.codex-claude-skills.json` at its root to tighten policy. Two classes,
+with opposite winners:
+
+| Class             | Keys                                                            | Repository may                                    |
+| ----------------- | --------------------------------------------------------------- | ------------------------------------------------- |
+| Spend-authorizing | `claude.maxBudgetUsd`, `codex.maxBudgetUsd`, `deliberation.maxRounds` | lower a value — never raise it              |
+| Process policy    | `peerAudit.policy`                                              | require stricter than the operator's — never weaker |
+
+Anything else in that file — a model, an effort, a billing mode — is refused loudly. An attempt to
+widen a spend control is an error naming both values, not a silent clamp; for process policy the
+comparison is anchored to the operator's preference or, when unset, the documented default, so a
+repository cannot weaken below `offer` just because the operator never wrote the key. A
+repository budget cap — even one equal to the operator's value — bounds any per-skill
+`maxBudgetUsd` override. Nothing
+checked into a repository can authorize spending against a personal account. The doctor runs the
+resolver and fails when a repository policy does not compose with the user's preferences.
+
+### Session cost governor
+
+Long sessions get expensive in a way that is invisible while it happens. Every request re-sends
+the whole conversation and the cached prefix bills at read rate on every turn, so cumulative cost
+is roughly turns × context — and since context grows with turns, cost rises with roughly the
+square of session length. The governor reads a Claude Code session transcript and reports it:
+
+```bash
+governor=.claude/skills/collab-config/scripts/session_governor.py
+python3 "$governor" --transcript ~/.claude/projects/<slug>/<session-id>.jsonl --billing plan
+```
+
+```text
+Turns: 214   Rebuilds: 25   Peak context: 631,178 tokens
+Cache: 53,191,616 read, 9,691,848 written (5m), 0 written (1h)
+Cost: $93.29 API-equivalent (not charged on a plan)
+Each further turn re-reads the context for about $0.32
+File drift: 0.20
+```
+
+It recommends a handoff only when a session is both expensive and drifted off the files it
+started on. Expensive alone is not a reason — a long session on one task is the prompt cache
+working correctly. Billing mode matters and is declared, never inferred: under a subscription
+plan the dollar figure is an inert API-equivalent shown because "$47 equivalent" reads faster
+than "94M cache-read tokens"; under `--billing api` the figures are real.
+
+To run it after every turn, add a `Stop` hook to Claude Code settings; in `--hook` mode it reads
+the hook payload on stdin, surfaces advice as a `systemMessage`, and always exits zero — advice
+that could block a turn would be worse than no advice.
+
+### Ending a session well
+
+`/session-handoff` in Claude Code, `$session-handoff` in Codex. This writes
+`plans/agent-handoffs/<task-slug>.md` — the same artifact the delegation runner already
+validates — so a cost-driven handoff and a model-to-model handoff are interchangeable.
+
 ## Safety and ownership
 
 - Keep the operator as the commit, push, and merge gate unless explicitly authorized otherwise.
@@ -465,6 +591,9 @@ replacement conventions.
 
 ```text
 .agents/skills/
+  collab-config/
+    SKILL.md
+    scripts/resolve_config.py
   deliberate-with-peer/
   delegate-frontend-to-claude/
     SKILL.md
@@ -477,13 +606,22 @@ replacement conventions.
     SKILL.md
     references/task-packet.md
     scripts/subagent_ledger.py
+  session-handoff/
+    SKILL.md
   setup-collaboration-hooks/
     SKILL.md
 .claude/skills/
   codex-computer-use/
+  collab-config/
+    SKILL.md
+    scripts/
+      resolve_config.py
+      session_governor.py
   deliberate-with-peer/
   codex-implementation/
   codex-review/
+  session-handoff/
+    SKILL.md
   ui-nitpicker/
 review-hooks/
   hooks/

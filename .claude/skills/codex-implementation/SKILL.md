@@ -68,7 +68,20 @@ rg -n "[task-specific symbol or term]" [likely paths]
 
 Use the diff and targeted search to bound the task before reading files. Read only the project guidance that applies to the current directory and touched domain. If the work touches package management, build tooling, migrations, deployment, authentication, authorization, payments, or data deletion, inspect the relevant docs and guardrails before asking Codex to edit.
 
-### 2. Decide execution mode
+### 2. Resolve the configured model
+
+If `collab-config` is installed, resolve what this skill should use before launching:
+
+```bash
+python3 .claude/skills/collab-config/scripts/resolve_config.py --skill codex-implementation
+```
+
+Pass a returned `model` as `-m <model>` and a returned `effort` as
+`-c model_reasoning_effort=<effort>` on the `codex` invocations below. If a field is absent, or
+the resolver is not installed, keep the developer's Codex environment default — never invent one.
+An explicit user instruction outranks the resolved value.
+
+### 3. Decide execution mode
 
 Use this routing:
 
@@ -95,7 +108,7 @@ PROMPT
 
 If the local Codex CLI does not support a flag used above, run `codex exec --help` and adapt to the installed version while preserving the same sandbox intent.
 
-### 3. Compose the implementation prompt
+### 4. Compose the implementation prompt
 
 Use the templates in:
 
@@ -112,7 +125,7 @@ The prompt must include:
 - Verification: specific commands to run, or a reason they cannot be run.
 - Output contract: concise summary, files changed, tests run, risks, and follow-up questions.
 
-### 4. Run Codex and capture output
+### 5. Run Codex and capture output
 
 For longer or high-risk runs, capture Codex's final message and logs:
 
@@ -128,7 +141,7 @@ codex exec -s workspace-write --cd "$PWD" - < "${run_dir}/${run_id}.prompt.md" \
 
 Use a repository-local `.codex-runs/` directory only when the user explicitly wants durable local logs and the path is ignored. Do not commit run logs unless the user asks and they contain no sensitive data.
 
-### 5. Post-run inspection
+### 6. Post-run inspection
 
 Always inspect the result yourself:
 
@@ -155,7 +168,7 @@ Then inspect full staged and unstaged diffs for every changed file, and open eve
 - Generated files and lockfile churn.
 - Comments that describe behavior not enforced by code.
 
-### 6. Validate
+### 7. Validate
 
 Run the narrowest useful checks first, then broader checks if they are cheap:
 
@@ -170,7 +183,7 @@ cargo test
 
 If tests cannot be run, explain why and replace them with static inspection that is as concrete as possible. Do not say verification passed unless a command or direct inspection supports that statement.
 
-### 7. Review loop
+### 8. Review loop
 
 For meaningful edits, run an adversarial review before finalizing. Use the project-local `codex-review` skill if it is installed. If it is not installed, fall back to direct read-only Codex review with the same adversarial review prompt pattern.
 

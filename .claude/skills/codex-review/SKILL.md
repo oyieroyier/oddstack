@@ -76,7 +76,20 @@ rg --files -g 'CLAUDE.md' -g 'AGENTS.md' -g 'README.md' | sed -n '1,50p'
 
 Use the diff and targeted search to bound the review. Read only the guidance relevant to the touched paths and domain before composing the review prompt.
 
-### 2. Prefer verified command syntax
+### 2. Resolve the configured model
+
+If `collab-config` is installed, resolve what this skill should use before launching:
+
+```bash
+python3 .claude/skills/collab-config/scripts/resolve_config.py --skill codex-review
+```
+
+Pass a returned `model` as `-m <model>` and a returned `effort` as
+`-c model_reasoning_effort=<effort>` on the `codex` invocations below. If a field is absent, or
+the resolver is not installed, keep the developer's Codex environment default — never invent one.
+An explicit user instruction outranks the resolved value.
+
+### 3. Prefer verified command syntax
 
 If you intend to use `codex review`, first inspect local help because Codex CLI versions may differ:
 
@@ -87,7 +100,7 @@ codex exec --help | sed -n '1,180p'
 
 Use `codex review` only if the help output confirms the command supports the needed target and custom instructions. Otherwise use the `codex exec -s read-only` fallback below.
 
-### 3. Fallback: adversarial review via read-only exec
+### 4. Fallback: adversarial review via read-only exec
 
 For a custom review, pipe a complete prompt into Codex:
 
@@ -115,7 +128,7 @@ If reviewing a branch, include:
 Review the diff from merge-base with [BASE] to HEAD. Inspect surrounding code and tests, not just the patch. Do not modify files.
 ```
 
-### 4. Require adversarial output format
+### 5. Require adversarial output format
 
 Codex must return findings in this format:
 
@@ -146,7 +159,7 @@ BLOCK | CAUTION | PASS
 
 Severity rubric is in `references/severity-rubric.md`.
 
-### 5. Claude adjudication
+### 6. Claude adjudication
 
 After Codex returns findings:
 

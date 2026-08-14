@@ -117,6 +117,28 @@ else
   warn "Claude Code terminal-bell notifications are not enabled"
 fi
 
+if command -v python3 >/dev/null 2>&1; then
+  resolver="$bundle_root/.claude/skills/collab-config/scripts/resolve_config.py"
+  resolver_args=(--repo "$repo_root" --show)
+  if [ -n "$preferences_path" ] && [ -f "$preferences_path" ]; then
+    resolver_args+=(--preferences "$preferences_path")
+  fi
+  if resolver_error="$(python3 "$resolver" "${resolver_args[@]}" 2>&1 >/dev/null)"; then
+    if [ -f "$repo_root/.codex-claude-skills.json" ]; then
+      pass "repository collaboration policy composes with user preferences"
+    else
+      pass "no repository collaboration policy override is present"
+    fi
+    if [ -n "$resolver_error" ]; then
+      warn "collaboration configuration resolves with warnings: $(printf '%s' "$resolver_error" | head -n 1)"
+    fi
+  else
+    fail "collaboration configuration does not resolve: ${resolver_error}"
+  fi
+else
+  warn "python3 is unavailable; collaboration preferences and any repository policy were not checked"
+fi
+
 check_tree() {
   local src="$1"
   local dst="$2"

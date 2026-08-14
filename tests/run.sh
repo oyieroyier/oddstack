@@ -764,6 +764,310 @@ EOF
   fi
 }
 
+test_collab_config_resolution() {
+  local resolver="$bundle_root/.claude/skills/collab-config/scripts/resolve_config.py"
+  local repo
+  local prefs="$test_root/collab-prefs.json"
+  repo="$(new_repo collab-config)"
+
+  cat >"$prefs" <<'EOF'
+{
+  "claude": {"model": "claude-fable-5", "effort": "xhigh"},
+  "codex": {"model": "gpt-5.6-sol", "effort": "high"},
+  "skills": {"codex-review": {"model": "gpt-5.6-terra", "effort": "medium"}},
+  "modelRates": {
+    "gpt-5.6-sol": {"input": 1.75, "output": 14.0},
+    "broken": {"input": "not-a-number"}
+  }
+}
+EOF
+
+  if python3 "$resolver" --preferences "$prefs" --repo "$repo" --skill codex-review |
+    grep -q '"model": "gpt-5.6-terra"' &&
+    python3 "$resolver" --preferences "$prefs" --repo "$repo" --skill codex-implementation |
+      grep -q '"model": "gpt-5.6-sol"' &&
+    python3 "$resolver" --preferences "$prefs" --repo "$repo" \
+      --skill deliberate-with-peer --provider claude |
+      grep -q '"model": "claude-fable-5"' &&
+    ! python3 "$resolver" --preferences "$prefs" --repo "$repo" \
+      --skill deliberate-with-peer >/dev/null 2>&1 &&
+    python3 "$resolver" --preferences "$prefs" --repo "$repo" --show 2>&1 >/dev/null |
+      grep -q 'malformed modelRates entry' &&
+    python3 "$resolver" --preferences "$prefs" --repo "$repo" --show 2>/dev/null |
+      python3 -c 'import json,sys; rates=json.load(sys.stdin)["modelRates"]; \
+raise SystemExit(0 if "broken" not in rates and rates["gpt-5.6-sol"]["cacheRead"] == 0.175 else 1)' &&
+    ! python3 "$resolver" --preferences "$prefs" --repo "$repo" \
+      --skill codex-review --provider claude >/dev/null 2>&1; then
+    pass "collab-config resolves skill overrides and drops malformed rates"
+  else
+    fail "collab-config resolves skill overrides and drops malformed rates"
+    return
+  fi
+
+  # Malformed user preferences fail with the loud named error, not a
+  # traceback: wrong scalar types, non-object sections, unhashable policy
+  # values, and non-finite budgets alike. A null skill entry means unset.
+  local prefs_error
+  local bad_prefs
+  for bad_prefs in \
+    '{"codex": {"maxBudgetUsd": "20"}}' \
+    '{"peerAudit": "off"}' \
+    '{"deliberation": 5}' \
+    '{"peerAudit": {"policy": []}}' \
+    '{"claude": {"maxBudgetUsd": Infinity}}'; do
+    printf '%s\n' "$bad_prefs" >"$test_root/collab-bad-prefs.json"
+    prefs_error="$(python3 "$resolver" --preferences "$test_root/collab-bad-prefs.json" \
+      --repo "$repo" --skill codex-implementation 2>&1 >/dev/null)"
+    if [ "$?" -ne 2 ] || grep -q 'Traceback' <<<"$prefs_error"; then
+      fail "collab-config validates user preferences before comparing them"
+      return
+    fi
+  done
+  printf '%s\n' '{"codex": {"model": "gpt-5.6-sol"}, "skills": {"codex-review": null}}' \
+    >"$test_root/collab-null-skill.json"
+  if python3 "$resolver" --preferences "$test_root/collab-null-skill.json" \
+    --repo "$repo" --skill codex-review |
+    grep -q '"model": "gpt-5.6-sol"'; then
+    pass "collab-config validates user preferences before comparing them"
+  else
+    fail "collab-config validates user preferences before comparing them"
+  fi
+}
+
+test_repo_policy_only_tightens() {
+  local resolver="$bundle_root/.claude/skills/collab-config/scripts/resolve_config.py"
+  local repo
+  local prefs="$test_root/tighten-prefs.json"
+  local widen_error
+  repo="$(new_repo repo-policy)"
+
+  cat >"$prefs" <<'EOF'
+{"codex": {"model": "gpt-5.6-sol", "maxBudgetUsd": 20}, "peerAudit": {"policy": "offer"}}
+EOF
+
+  printf '%s\n' '{"peerAudit": {"policy": "required"}, "codex": {"maxBudgetUsd": 5}}' \
+    >"$repo/.codex-claude-skills.json"
+  if ! python3 "$resolver" --preferences "$prefs" --repo "$repo" --policy peerAudit |
+    grep -q '"source": "repo"' ||
+    ! python3 "$resolver" --preferences "$prefs" --repo "$repo" --skill codex-implementation |
+      grep -q '"maxBudgetUsd": 5'; then
+    fail "repository policy tightens spend and process controls, never widens them"
+    return
+  fi
+
+  printf '%s\n' '{"peerAudit": {"policy": "off"}}' >"$repo/.codex-claude-skills.json"
+  widen_error="$(python3 "$resolver" --preferences "$prefs" --repo "$repo" \
+    --policy peerAudit 2>&1 >/dev/null)"
+  if [ "$?" -eq 0 ] ||
+    ! grep -q "'off'" <<<"$widen_error" ||
+    ! grep -q "'offer'" <<<"$widen_error"; then
+    fail "repository policy tightens spend and process controls, never widens them"
+    return
+  fi
+
+  printf '%s\n' '{"codex": {"maxBudgetUsd": 50}}' >"$repo/.codex-claude-skills.json"
+  widen_error="$(python3 "$resolver" --preferences "$prefs" --repo "$repo" \
+    --skill codex-implementation 2>&1 >/dev/null)"
+  if [ "$?" -eq 0 ] ||
+    ! grep -q '50' <<<"$widen_error" ||
+    ! grep -q '20' <<<"$widen_error"; then
+    fail "repository policy tightens spend and process controls, never widens them"
+    return
+  fi
+
+  printf '%s\n' '{"codex": {"model": "gpt-9"}}' >"$repo/.codex-claude-skills.json"
+  if python3 "$resolver" --preferences "$prefs" --repo "$repo" \
+    --skill codex-implementation >/dev/null 2>&1; then
+    fail "repository policy tightens spend and process controls, never widens them"
+    return
+  fi
+
+  # A repository cannot weaken below the documented default either, even when
+  # the operator never wrote the key.
+  printf '%s\n' '{"codex": {"model": "gpt-5.6-sol"}}' >"$test_root/tighten-defaults.json"
+  printf '%s\n' '{"peerAudit": {"policy": "off"}}' >"$repo/.codex-claude-skills.json"
+  widen_error="$(python3 "$resolver" --preferences "$test_root/tighten-defaults.json" \
+    --repo "$repo" --policy peerAudit 2>&1 >/dev/null)"
+  if [ "$?" -eq 0 ] ||
+    ! grep -q "'off'" <<<"$widen_error" ||
+    ! grep -q "'offer'" <<<"$widen_error"; then
+    fail "repository policy tightens spend and process controls, never widens them"
+    return
+  fi
+
+  # Structurally malformed repo values get the loud named error, not a traceback.
+  printf '%s\n' '{"codex": {"maxBudgetUsd": {}}}' >"$repo/.codex-claude-skills.json"
+  widen_error="$(python3 "$resolver" --preferences "$prefs" --repo "$repo" \
+    --skill codex-implementation 2>&1 >/dev/null)"
+  if [ "$?" -ne 2 ] || ! grep -q 'non-negative number' <<<"$widen_error"; then
+    fail "repository policy tightens spend and process controls, never widens them"
+    return
+  fi
+
+  # A repo budget cap bounds per-skill overrides too — including a cap equal
+  # to the user's own provider value, and a null override cannot dodge it.
+  local cap_case cap_value cap_prefs
+  printf '%s\n' \
+    '{"codex": {"model": "gpt-5.6-sol", "maxBudgetUsd": 20}, "skills": {"codex-review": {"maxBudgetUsd": 100}}}' \
+    >"$test_root/tighten-skill-budget.json"
+  printf '%s\n' \
+    '{"codex": {"model": "gpt-5.6-sol", "maxBudgetUsd": 20}, "skills": {"codex-review": {"maxBudgetUsd": null, "model": null}}}' \
+    >"$test_root/tighten-null-budget.json"
+  for cap_case in "5 skill" "20 skill" "5 null"; do
+    cap_value="${cap_case%% *}"
+    case "${cap_case#* }" in
+      skill) cap_prefs="$test_root/tighten-skill-budget.json" ;;
+      null) cap_prefs="$test_root/tighten-null-budget.json" ;;
+    esac
+    printf '{"codex": {"maxBudgetUsd": %s}}\n' "$cap_value" \
+      >"$repo/.codex-claude-skills.json"
+    if ! python3 "$resolver" --preferences "$cap_prefs" \
+      --repo "$repo" --skill codex-review |
+      python3 -c "
+import json, sys
+resolved = json.load(sys.stdin)
+assert resolved['maxBudgetUsd'] == ${cap_value}, resolved
+assert resolved['sources']['maxBudgetUsd'] == 'repo', resolved
+assert resolved['model'] == 'gpt-5.6-sol', resolved
+"; then
+      fail "repository policy tightens spend and process controls, never widens them"
+      return
+    fi
+  done
+
+  # A null top-level section means unset: it takes the repo tightening
+  # instead of crashing the merge or dodging the cap.
+  printf '%s\n' '{"codex": null, "peerAudit": null}' >"$test_root/tighten-null-section.json"
+  printf '%s\n' '{"codex": {"maxBudgetUsd": 5}, "peerAudit": {"policy": "required"}}' \
+    >"$repo/.codex-claude-skills.json"
+  if ! python3 "$resolver" --preferences "$test_root/tighten-null-section.json" \
+    --repo "$repo" --skill codex-implementation |
+    grep -q '"maxBudgetUsd": 5' ||
+    ! python3 "$resolver" --preferences "$test_root/tighten-null-section.json" \
+      --repo "$repo" --policy peerAudit |
+      grep -q '"policy": "required"'; then
+    fail "repository policy tightens spend and process controls, never widens them"
+    return
+  fi
+
+  # Structural junk in the policy value slot, non-finite numbers, and an
+  # empty policy file all get the loud named error, never a traceback.
+  local structural_error
+  local bad_policy
+  for bad_policy in \
+    '{"peerAudit": {"policy": {}}}' \
+    '{"codex": {"maxBudgetUsd": Infinity}}' \
+    '{}'; do
+    printf '%s\n' "$bad_policy" >"$repo/.codex-claude-skills.json"
+    structural_error="$(python3 "$resolver" --preferences "$prefs" --repo "$repo" \
+      --policy peerAudit 2>&1 >/dev/null)"
+    if [ "$?" -ne 2 ] || grep -q 'Traceback' <<<"$structural_error"; then
+      fail "repository policy tightens spend and process controls, never widens them"
+      return
+    fi
+  done
+
+  pass "repository policy tightens spend and process controls, never widens them"
+}
+
+test_session_governor_advises_without_blocking() {
+  local governor="$bundle_root/.claude/skills/collab-config/scripts/session_governor.py"
+  local prefs="$test_root/governor-prefs.json"
+  local drifted="$test_root/governor-drifted.jsonl"
+  local focused="$test_root/governor-focused.jsonl"
+
+  cat >"$prefs" <<'EOF'
+{"modelRates": {"claude-fable-5": {"input": 5.0, "output": 25.0}}}
+EOF
+  python3 - "$drifted" "$focused" <<'EOF'
+import json
+import sys
+
+
+def transcript(path, files):
+    lines = []
+    for i in range(20):
+        usage = {
+            "input_tokens": 200,
+            "output_tokens": 500,
+            "cache_read_input_tokens": 400_000,
+            "cache_creation_input_tokens": 20_000,
+            "cache_creation": {
+                "ephemeral_5m_input_tokens": 20_000,
+                "ephemeral_1h_input_tokens": 0,
+            },
+        }
+        message = {
+            "model": "claude-fable-5",
+            "usage": usage,
+            "content": [
+                {
+                    "type": "tool_use",
+                    "name": "Read",
+                    "input": {"file_path": files[0] if i < 10 else files[-1]},
+                }
+            ],
+        }
+        lines.append(
+            json.dumps({"type": "assistant", "requestId": f"req_{i}", "message": message})
+        )
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("\n".join(lines))
+
+
+transcript(sys.argv[1], ["/repo/early.py", "/elsewhere/late.py"])
+transcript(sys.argv[2], ["/repo/only.py"])
+EOF
+
+  if python3 "$governor" --transcript "$drifted" --preferences "$prefs" \
+    --billing api --expensive-usd 1 |
+    grep -q 'consider /session-handoff' &&
+    ! python3 "$governor" --transcript "$focused" --preferences "$prefs" \
+      --billing api --expensive-usd 1 |
+      grep -q 'consider /session-handoff' &&
+    python3 "$governor" --transcript "$drifted" --preferences "$prefs" --billing plan |
+      grep -q 'API-equivalent (not charged on a plan)' &&
+    printf 'not json' | python3 "$governor" --hook >/dev/null 2>&1; then
+    pass "session governor prices transcripts and only advises on expensive drift"
+  else
+    fail "session governor prices transcripts and only advises on expensive drift"
+    return
+  fi
+
+  # Hook mode swallows every failure: explicit JSON nulls in token counts and
+  # malformed preferences must both still exit zero.
+  local hostile="$test_root/governor-hostile.jsonl"
+  printf '%s\n' \
+    '{"type": "assistant", "message": {"model": "claude-fable-5", "usage": {"input_tokens": null, "cache_read_input_tokens": 5, "cache_creation": {"ephemeral_5m_input_tokens": null}}}}' \
+    >"$hostile"
+  printf '%s\n' 'not json at all' >"$test_root/governor-bad-prefs.json"
+  printf '%s\n' \
+    '{"type": "assistant", "message": {"model": "claude-fable-5", "usage": {"input_tokens": NaN, "cache_read_input_tokens": Infinity}}}' \
+    >>"$hostile"
+  if python3 "$governor" --transcript "$hostile" --preferences "$prefs" >/dev/null 2>&1 &&
+    printf '{"transcript_path": "%s"}' "$hostile" |
+    python3 "$governor" --hook --preferences "$test_root/governor-bad-prefs.json" \
+      >/dev/null 2>&1 &&
+    printf '{}' | python3 "$governor" --hook --billing plna >/dev/null 2>&1 &&
+    printf '{}' | python3 "$governor" --hook --drift-threshold abc >/dev/null 2>&1 &&
+    ! python3 "$governor" --transcript "$hostile" --billing plna >/dev/null 2>&1 &&
+    ! printf '{}' | python3 "$governor" --hoo >/dev/null 2>&1; then
+    pass "session governor hook mode never exits nonzero"
+  else
+    fail "session governor hook mode never exits nonzero"
+  fi
+}
+
+test_collab_config_stays_synced() {
+  if cmp -s \
+    "$bundle_root/.claude/skills/collab-config/scripts/resolve_config.py" \
+    "$bundle_root/.agents/skills/collab-config/scripts/resolve_config.py"; then
+    pass "cross-environment collab-config resolver remains synchronized"
+  else
+    fail "cross-environment collab-config resolver remains synchronized"
+  fi
+}
+
 test_release_archives_contain_no_tool_caches() {
   if tar -tzf "$bundle_root/codex-claude-skills.tar.gz" \
       | grep -Eq '__pycache__|\.pytest_cache|\.pyc$'; then
@@ -821,6 +1125,10 @@ test_dependency_install_is_explicit_and_dry_runnable
 test_missing_model_clis_are_manual_capabilities
 test_deliberation_preferences_and_alerts_stay_scoped
 test_spend_ledger_settles_to_actual_spend
+test_collab_config_resolution
+test_repo_policy_only_tightens
+test_session_governor_advises_without_blocking
+test_collab_config_stays_synced
 test_release_archives_contain_no_tool_caches
 test_release_archives_contain_only_bundle_content
 
