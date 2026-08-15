@@ -6,7 +6,8 @@ description: Route explicitly requested Codex subagent or parallel-agent work th
 # Route Codex Subagents
 
 Treat delegation as an execution choice, not a default. Keep the primary thread responsible for
-intent, task contracts, integration, and final claims.
+intent, task contracts, integration, decisive review, and final claims. Worker-local evidence can
+close a worker packet; it cannot close plan-tracked implementation.
 
 ## Gate delegation
 
@@ -136,8 +137,29 @@ Any descendant marks the ledger `VIOLATED`; stop further delegation, reject the 
 result, and finish locally. If the active surface cannot expose the complete tree, do not claim the
 cumulative guarantee and do not continue delegating.
 
-Reject `COMPLETE` when any criterion is absent, unsatisfied, or uncertain. Inspect the relevant
-source and diff and run fresh checks in the primary thread before making completion claims.
+Reject the worker return when any criterion is absent, unsatisfied, or uncertain. Inspect the
+relevant source and diff and run fresh checks in the primary thread before accepting the slice.
+Workers may not set `READY_FOR_OPERATOR`, `ACCEPTANCE_COMPLETE`, or a plan/backlog `COMPLETE` state.
+
+## Run the decisive aggregate review
+
+After every accepted worker return is integrated, keep plan-tracked work at
+`READY_FOR_INTEGRATION_REVIEW`. Read and invoke the project-local `integration-review` skill over
+the fixed base and complete working tree. The root reviewer must independently inspect:
+
+- the complete root agent tree and every canonical descendant;
+- this task's ledger, all worker packets/returns, and every open model or operator queue;
+- the aggregate diff, staged diff, and untracked paths; and
+- every source acceptance criterion, including absent wiring and end-user outcomes.
+
+The decisive matrix must verify consumption/wiring, flag-off defaults, indexed and fallback
+boundaries, migration/seed/runtime parity, and user-visible behavior when they apply. A focused
+typecheck or unit test is evidence for a row, not a substitute for the matrix.
+
+Run `node .agents/skills/integration-review/scripts/check-integration-review-readiness.mjs check --artifact <path>` before claiming
+`READY_FOR_OPERATOR`. Any missing, `UNSATISFIED`, or `UNCERTAIN` row; open queue; stale tree;
+unadjudicated finding; ledger violation; or absent descendant confirmation blocks. Capacity and
+execution failures become `INCONCLUSIVE_REVIEW`. Only the operator may set `ACCEPTANCE_COMPLETE`.
 
 ## Escalate without multiplying cost
 
@@ -152,7 +174,8 @@ uncertain return:
 Do not create multiple speculative replacements. Stop after the same failure mode repeats. Preserve
 the concrete blocker and unfinished criteria.
 
-Wait for requested workers, reconcile their evidence, and close or stop unneeded threads. Report
-which roles and models ran, total child creations, total delegated turns, whether both budgets and
-the concurrency cap held, ledger path and status, any observed descendants, and what the primary
+Wait for requested workers, reconcile their evidence, and close or stop unneeded threads. The
+decisive artifact and final report must name inspected and changed paths, commands and outcomes,
+assumptions, remaining risks, roles/models, total child creations, delegated turns, budget and
+concurrency compliance, ledger path/status, descendant confirmation, and what the root reviewer
 independently verified.

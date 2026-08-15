@@ -34,7 +34,11 @@ Required rules:
   then review the result and update the backlog before resuming frontend work.
 - When either model cannot run, record `BLOCKED_CLAUDE_CAPACITY`, `BLOCKED_CODEX_CAPACITY`, or
   `BLOCKED_EXECUTION`, preserve its open queue, and leave an exact resume prompt in the backlog.
-- Never mark the delegation complete while any model or operator queue contains an open task.
+- A capacity or infrastructure failure never checks off affected work or turns partial files into
+  evidence of completion. Preserve every affected task as open.
+- Never use legacy `COMPLETE`. Closing the model queues moves the backlog only to
+  `READY_FOR_INTEGRATION_REVIEW`; the root-owned decisive review determines
+  `READY_FOR_OPERATOR`, and only the operator determines `ACCEPTANCE_COMPLETE`.
 
 ## Preserve ownership
 
@@ -107,6 +111,10 @@ Require Claude to:
 - use the TanStack shell, design-system primitives, and project navigation APIs;
 - cover loading, empty, error, success, disabled, responsive, keyboard, and dark-mode states when applicable;
 - run targeted frontend checks plus `pnpm --filter @hob/web ds:check` and `pnpm audit:pages` after changes under `apps/web/src`;
+- prove that every named API field is consumed by each intended route/surface rather than merely
+  typed or wrapped in an unmounted component;
+- record desktop/mobile parity, loading-skeleton parity, focused tests, web typecheck,
+  design-system checks, page-audit results/demotions, and required manual visual checks;
 - avoid commits, pushes, resets, stashes, branch changes, backend edits, dependency additions, and unrelated formatting;
 - return a concise changed-files and verification report.
 
@@ -173,6 +181,12 @@ Before claiming the integrated work is fixed, complete, passing, or ready:
 
 Run the targeted backend and frontend checks together. For any change under `apps/web/src`, enforce the repository's visual-audit rule. Never approve visual-audit entries on the user's behalf.
 
+Do not close a `UI-*` task until the intended UI surface consumes the API fields and the backlog
+contains evidence for desktop/mobile parity, skeleton parity, focused tests, web typecheck,
+design-system checks, page audit/demotions, and any required operator visual check. Record a
+non-applicable item explicitly. A component file, passing typecheck, or partial runner output is not
+surface completion.
+
 If a frontend defect remains, add it to Claude's backlog queue before creating a narrow follow-up
 prompt. If a confirmed backend finding requires a change, add it to the Codex return queue. Codex
 implements and verifies it directly, or Claude invokes `codex-implementation` and then reviews the
@@ -181,7 +195,28 @@ result. Update the contract checkpoint before Claude resumes dependent frontend 
 Stop after two failed delegation attempts with the same failure mode. Record the blocker, preserved
 queue, next owner, and exact resume prompt instead of looping.
 
-## 6. Report the result
+## 6. Run decisive integration review
+
+When every Codex and Claude implementation/audit queue is closed, set
+`READY_FOR_INTEGRATION_REVIEW`, not `COMPLETE`. Invoke the project-local `integration-review` skill
+over the fixed base and complete tree. The root must inspect the complete backlog, final diff,
+untracked paths, and acceptance matrix, including contract consumption, flag-off behavior,
+indexed/fallback boundaries, migration/seed parity, responsive browser outcomes, and remaining
+operator gates.
+
+Record the artifact path and run:
+
+```bash
+node .agents/skills/integration-review/scripts/check-integration-review-readiness.mjs check \
+  --artifact plans/agent-reviews/<task-slug>.json
+```
+
+Any missing, `UNSATISFIED`, or `UNCERTAIN` row, open task, inconclusive audit, stale tree, or
+unadjudicated finding blocks readiness. Deterministic checks, AI integration review, and operator
+visual/merge approval remain separate. Capacity or execution failure is `INCONCLUSIVE_REVIEW` and
+leaves an exact resume prompt.
+
+## 7. Report the result
 
 State:
 
@@ -193,6 +228,8 @@ State:
 - the exact checks run and outcomes;
 - remaining risks, baseline failures, or visual review still requiring a human;
 - durable backlog path, status, next owner, and open queue ids;
+- decisive review artifact/state, every blocking matrix row, and operator gates;
 - commit/push/merge status.
 
-Do not say the integrated task is complete unless direct diff inspection and verification support it.
+Do not say the integrated task is complete. Agents may report `READY_FOR_OPERATOR` only after the
+readiness validator passes; only the operator may accept it as `ACCEPTANCE_COMPLETE`.

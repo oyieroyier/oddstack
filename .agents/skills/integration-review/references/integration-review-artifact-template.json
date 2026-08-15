@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "taskId": "[stable task or plan id]",
+  "state": "INTEGRATION_REVIEW_IN_PROGRESS",
+  "sourceArtifacts": ["plans/[source].md"],
+  "policyArtifacts": [".agents/skills/integration-review/references/decisive-integration-review-gate.md"],
+  "treeIdentity": {
+    "baseCommit": "[full sha]",
+    "headCommit": "[full sha]",
+    "aggregateDiffSha256": "[sha256]",
+    "stagedDiffSha256": "[sha256]",
+    "untrackedFilesSha256": "[sha256]",
+    "sourceArtifactsSha256": "[sha256]",
+    "policyArtifactsSha256": "[sha256]",
+    "excludedMetadataPaths": ["plans/agent-reviews/[task].json"]
+  },
+  "reviewer": {
+    "name": "[reviewer]",
+    "model": "[model or human]",
+    "role": "independent aggregate integration reviewer",
+    "independentFromPrimaryImplementation": true,
+    "reviewedAt": "[ISO timestamp]"
+  },
+  "reviewAxes": {
+    "standards": { "status": "UNCERTAIN", "findingIds": [] },
+    "spec": { "status": "UNCERTAIN", "findingIds": [] },
+    "integrationRuntime": { "status": "UNCERTAIN", "findingIds": [] }
+  },
+  "expectedCriteria": ["[copy every source acceptance criterion verbatim]"],
+  "acceptanceMatrix": [
+    {
+      "criterion": "[one source criterion]",
+      "status": "UNCERTAIN",
+      "fileOrSymbol": "[path, route, or symbol]",
+      "verification": "[command or observation and outcome]",
+      "risk": "[risk or finding id; NONE only with evidence]"
+    }
+  ],
+  "requiredChecks": [
+    {
+      "kind": "DETERMINISTIC",
+      "command": "[fresh command]",
+      "outcome": "PENDING",
+      "evidence": "[exit status or artifact path]"
+    }
+  ],
+  "queues": [{ "id": "[task id]", "owner": "[owner]", "status": "OPEN" }],
+  "findings": [],
+  "paths": { "inspected": ["[path]"], "changed": ["[path]"] },
+  "assumptions": ["[assumption or NONE]"],
+  "remainingRisks": ["[risk or NONE]"],
+  "modelUsage": [{ "model": "[model]", "role": "[role]", "turns": 1 }],
+  "delegation": {
+    "childCount": 0,
+    "delegatedTurnCount": 0,
+    "ledgerPath": "NOT_APPLICABLE",
+    "ledgerStatus": "NOT_APPLICABLE",
+    "descendantConfirmation": "NOT_APPLICABLE",
+    "rootAgentTreeInspected": true
+  },
+  "operatorGates": [
+    {
+      "kind": "MANUAL_VISUAL",
+      "outcome": "PENDING",
+      "evidence": "Operator-owned; agents never approve page-audit entries"
+    },
+    {
+      "kind": "MERGE_APPROVAL",
+      "outcome": "PENDING",
+      "evidence": "Operator-owned"
+    }
+  ]
+}

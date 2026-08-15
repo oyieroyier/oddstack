@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Integration Review'
+  short_description: 'Gate plan work on exact-tree acceptance'
+  default_prompt: 'Use $integration-review to evaluate this exact tree against its source plan and produce a decisive acceptance matrix.'
