@@ -85,6 +85,23 @@ while [ "$#" -gt 0 ]; do
 done
 
 bundle_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Refuse an incomplete module before touching the target. Without this the
+# install fails partway through `cp`, leaving a half-populated .review-hooks/
+# behind and exiting 1 — the code the contract reserves for a stale target
+# rather than a missing requirement. This list must match RUNTIME_DIGEST_PATHS
+# in ../scripts/bundle-version.sh; a test asserts they agree. The duplication is
+# unavoidable: this script is copied into target repositories and runs where
+# ../scripts/ does not exist.
+module_missing=""
+for required in scripts hooks bin review_gate VERSION README.md; do
+  [ -e "$bundle_root/$required" ] || module_missing="$module_missing $required"
+done
+if [ -n "$module_missing" ]; then
+  echo "[review-hooks] incomplete module, missing:$module_missing" >&2
+  exit 2
+fi
+
 repo_root="$(git -C "$repo_input" rev-parse --show-toplevel 2>/dev/null || true)"
 
 if [ -z "$repo_root" ]; then
@@ -230,12 +247,23 @@ chmod +x \
 
 # Stamp the installed runtime with its bundle version and source digest so
 # doctor.sh can detect an installation from an older bundle.
+#
+# This duplicates runtime_source_digest() in ../scripts/bundle-version.sh, and
+# must stay byte-for-byte identical to it: doctor.sh compares what that helper
+# computes against what this writes, so any divergence is reported to the user
+# as a stale runtime. The copy exists because this script is installed into
+# target repositories and run from there, where ../scripts/ does not exist.
+# Keep the exclusions, the NUL delimiters, and the sort flags in sync by hand.
 bundle_digest="$(
   cd "$bundle_root" &&
     find scripts hooks bin review_gate VERSION README.md \
-      -type f -not -path '*__pycache__*' |
-    LC_ALL=C sort |
-    xargs sha256sum |
+      -type f \
+      -not -path '*__pycache__*' \
+      -not -name '*.pyc' \
+      -not -path '*.pytest_cache*' \
+      -print0 |
+    LC_ALL=C sort -z |
+    xargs -0 sha256sum |
     sha256sum |
     awk '{print $1}'
 )"

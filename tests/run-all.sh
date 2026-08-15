@@ -25,6 +25,12 @@ run_step() {
 check_shell_syntax() {
   local file status=0
   for file in "$@"; do
+    # A glob that matched nothing arrives here with its metacharacter intact;
+    # skip only those. A named path that is missing must still fail, or renaming
+    # a checked script would silently drop its coverage.
+    case "$file" in
+      *'*'*) continue ;;
+    esac
     if ! bash -n "$file"; then
       echo "==> bash syntax: FAILED on $file" >&2
       status=1
@@ -33,11 +39,27 @@ check_shell_syntax() {
   return "$status"
 }
 
-shell_sources=("$bundle_root"/*.sh "$bundle_root"/review-hooks/install.sh
+shell_sources=("$bundle_root"/*.sh "$bundle_root"/scripts/*.sh
+  "$bundle_root"/.agents/skills/*/scripts/*.sh
+  "$bundle_root"/.claude/skills/*/scripts/*.sh
+  "$bundle_root"/review-hooks/install.sh
   "$bundle_root"/review-hooks/scripts/*.sh "$bundle_root"/review-hooks/hooks/*
   "$bundle_root"/review-hooks/bin/review-gate "$bundle_root"/tests/run.sh
   "$bundle_root"/review-hooks/tests/run.sh)
 run_step "bash syntax" check_shell_syntax "${shell_sources[@]}"
+
+# The integration-review readiness validator is the bundle's only JavaScript.
+# It ships to repositories that may hold no other JS, so nothing else would
+# catch a syntax error in it.
+check_node_syntax() {
+  local script="$bundle_root/.agents/skills/integration-review/scripts/check-integration-review-readiness.mjs"
+  if ! command -v node >/dev/null 2>&1; then
+    echo "==> node syntax: skipped, node is not installed" >&2
+    return 0
+  fi
+  node --check "$script"
+}
+run_step "node syntax" check_node_syntax
 run_step "bundle suite" bash "$bundle_root/tests/run.sh"
 run_step "review-hooks suite" bash "$bundle_root/review-hooks/tests/run.sh"
 run_step "release archives" "$bundle_root/package.sh" --check

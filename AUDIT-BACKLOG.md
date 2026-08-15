@@ -234,6 +234,10 @@ From the Claude–Codex deliberation over the 2.2.0 changes. Settled; reopen onl
   from `2.1.1` gain a feature and lose profile-path selection, and the version should say so.
 - **`RUNTIME_VERSION` is pinned to the bundle `VERSION`,** with a drift test. It labels every
   `run.json` and is not a schema constant — the schema versions beside it are separate.
+  (Later note, not a change to this decision: `VERSION` here means `review-hooks/VERSION`, the only
+  one that existed when this was settled. A root `VERSION` was added afterwards for the bundle
+  release as a whole; the two version different things and are expected to differ. See "Two version
+  files" in README.md.)
 - **The durable-intake payload is bounded parsed-result JSON on stdin.** Operator's decision. Raw
   reviewer prose is excluded: untrusted model output the harness does not copy. Changing the
   payload shape is a breaking change for intake generators and should move the minor version with

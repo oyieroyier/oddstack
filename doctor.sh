@@ -47,7 +47,24 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-bundle_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# -P resolves symlinks so this stays comparable with the physical path
+# `git rev-parse --show-toplevel` reports; see install.sh for the same reason.
+bundle_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+if [ ! -f "$bundle_root/scripts/bundle-version.sh" ]; then
+  echo "[doctor] incomplete bundle, missing: scripts/bundle-version.sh" >&2
+  exit 2
+fi
+# shellcheck source=scripts/bundle-version.sh
+. "$bundle_root/scripts/bundle-version.sh"
+
+# Refuse to report on a target using a broken bundle: every mismatch would be
+# blamed on the repository rather than on the bundle doing the comparing.
+bundle_missing="$(bundle_missing_paths "$bundle_root")"
+if [ -n "$bundle_missing" ]; then
+  echo "[doctor] incomplete bundle, missing:" >&2
+  printf '  %s\n' $bundle_missing >&2
+  exit 2
+fi
 repo_root="$(git -C "$repo_input" rev-parse --show-toplevel 2>/dev/null || true)"
 passes=0
 warnings=0
@@ -146,26 +163,85 @@ check_tree() {
 
   if [ ! -e "$dst" ]; then
     warn "$label is not installed"
-  elif diff -qr -x '__pycache__' -x '*.pyc' "$src" "$dst" >/dev/null; then
+  elif diff -qr "${BUNDLE_DIFF_EXCLUDES[@]}" "$src" "$dst" >/dev/null; then
     pass "$label matches the bundle"
   else
     warn "$label has local drift; inspect with: diff -ru \"$dst\" \"$src\""
   fi
 }
 
+# Whether any *bundled* content is present. A repository's own unrelated skills
+# do not make it an install, and review-hooks alone does. Directory existence is
+# the wrong test in both directions.
+bundle_content_installed=0
+
 for skill_src in "$bundle_root"/.claude/skills/*; do
   [ -d "$skill_src" ] || continue
   skill_name="$(basename "$skill_src")"
+  [ -e "$repo_root/.claude/skills/$skill_name" ] && bundle_content_installed=1
   check_tree "$skill_src" "$repo_root/.claude/skills/$skill_name" ".claude/skills/$skill_name"
 done
 
 for skill_src in "$bundle_root"/.agents/skills/*; do
   [ -d "$skill_src" ] || continue
   skill_name="$(basename "$skill_src")"
+  [ -e "$repo_root/.agents/skills/$skill_name" ] && bundle_content_installed=1
   check_tree "$skill_src" "$repo_root/.agents/skills/$skill_name" ".agents/skills/$skill_name"
 done
 
+# Both the copied source tree and the activated runtime count as installed
+# content; a repository holding only .review-hooks/ is an install too.
+{ [ -e "$repo_root/review-hooks" ] || [ -e "$repo_root/.review-hooks" ] ||
+  [ -e "$repo_root/$BUNDLE_STAMP_FILE" ]; } && bundle_content_installed=1
 check_tree "$bundle_root/review-hooks" "$repo_root/review-hooks" "review-hooks"
+
+# Both stamp comparisons below need sha256sum. Resolve it once so they degrade
+# the same way rather than one warning and the other silently skipping.
+have_sha256sum=0
+if command -v sha256sum >/dev/null 2>&1; then
+  have_sha256sum=1
+fi
+
+# integration-review is the one skill with a runtime dependency of its own: its
+# readiness validator is Node. Check the interpreter only when the skill is
+# actually installed, so repositories that never adopted it stay quiet.
+if [ -d "$repo_root/.agents/skills/integration-review" ]; then
+  if ! command -v node >/dev/null 2>&1; then
+    warn "integration-review is installed but node is missing; its readiness validator cannot run"
+  else
+    node_major="$(node --version 2>/dev/null | sed -nE 's/^v([0-9]+).*/\1/p')"
+    if [ -n "$node_major" ] && [ "$node_major" -lt 15 ]; then
+      warn "node $(node --version) is older than the Node 15 the readiness validator requires"
+    else
+      pass "node satisfies the integration-review readiness validator"
+    fi
+  fi
+fi
+
+# The per-tree checks above prove whether installed files differ from the
+# bundle; the stamp says which release they came from, which is what separates
+# "edited here" from "installed from an older bundle".
+if [ "$repo_root" != "$bundle_root" ]; then
+  bundle_stamp_path="$repo_root/$BUNDLE_STAMP_FILE"
+  bundle_release="$(bundle_version "$bundle_root")"
+  installed_release="$(bundle_stamp_field "$bundle_stamp_path" version)"
+
+  if [ -z "$installed_release" ] && [ "$bundle_content_installed" = "0" ]; then
+    pass "no bundle is installed here; nothing to compare against $bundle_release"
+  elif [ -z "$installed_release" ]; then
+    warn "$BUNDLE_STAMP_FILE is missing; the install predates bundle $bundle_release"
+  elif [ "$have_sha256sum" != "1" ]; then
+    warn "sha256sum is unavailable; stamped bundle $installed_release was not verified"
+  elif [ "$installed_release" != "$bundle_release" ]; then
+    warn "skills bundle is $installed_release, a different release than $bundle_release; rerun install.sh --force"
+  elif ! computed_bundle_digest="$(bundle_source_digest "$bundle_root")"; then
+    fail "cannot digest this bundle; its report about $repo_root is not trustworthy"
+  elif [ "$(bundle_stamp_field "$bundle_stamp_path" source-digest)" = "$computed_bundle_digest" ]; then
+    pass "skills bundle $installed_release matches this bundle release"
+  else
+    warn "skills bundle came from another build of $installed_release; rerun install.sh --force"
+  fi
+fi
 
 if [ -d "$repo_root/.review-hooks" ] && [ "$repo_root" != "$bundle_root" ]; then
   for runtime_part in scripts review_gate bin; do
@@ -192,25 +268,22 @@ if [ -d "$repo_root/.review-hooks" ] && [ "$repo_root" != "$bundle_root" ]; then
     warn ".review-hooks/VERSION is missing; the runtime predates version 2"
   fi
 
-  stamp_file="$repo_root/.review-hooks/bundle-version"
-  if [ -f "$stamp_file" ] && command -v sha256sum >/dev/null 2>&1; then
-    installed_digest="$(sed -nE 's/^source-digest: (.*)$/\1/p' "$stamp_file")"
-    bundle_digest="$(
-      cd "$bundle_root/review-hooks" &&
-        find scripts hooks bin review_gate VERSION README.md \
-          -type f -not -path '*__pycache__*' |
-        LC_ALL=C sort |
-        xargs sha256sum |
-        sha256sum |
-        awk '{print $1}'
-    )"
-    if [ "$installed_digest" = "$bundle_digest" ]; then
+  runtime_stamp_path="$repo_root/.review-hooks/bundle-version"
+  if [ ! -f "$runtime_stamp_path" ]; then
+    warn ".review-hooks/bundle-version stamp is missing; the runtime predates version 2"
+  elif [ "$have_sha256sum" != "1" ]; then
+    warn "sha256sum is unavailable; the installed review runtime was not verified"
+  else
+    installed_digest="$(bundle_stamp_field "$runtime_stamp_path" source-digest)"
+    if ! runtime_digest="$(runtime_source_digest "$bundle_root")"; then
+      # Never blame the target for a digest this bundle could not compute; that
+      # would send the operator to reinstall from the broken bundle.
+      fail "cannot digest this bundle's review runtime; its verdict on $repo_root is not trustworthy"
+    elif [ "$installed_digest" = "$runtime_digest" ]; then
       pass "installed review runtime matches this bundle release"
     else
       warn "installed review runtime came from another bundle release; rerun review-hooks/install.sh --force"
     fi
-  else
-    warn ".review-hooks/bundle-version stamp is missing; the runtime predates version 2"
   fi
 fi
 

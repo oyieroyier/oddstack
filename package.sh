@@ -55,6 +55,7 @@ cp -R \
 cp \
   "$bundle_root/README.md" \
   "$bundle_root/LICENSE" \
+  "$bundle_root/VERSION" \
   "$bundle_root/CLAUDE.md.codex-skills-snippet.md" \
   "$bundle_root/bootstrap.sh" \
   "$bundle_root/doctor.sh" \

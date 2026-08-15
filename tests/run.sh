@@ -32,6 +32,20 @@ new_repo() {
   printf '%s\n' "$repo"
 }
 
+# Content plus size and mtime for every tracked-or-not file outside .git, so a
+# read-only assertion catches an in-place rewrite, not just an added path.
+snapshot_repo() {
+  local listing
+  listing="$(mktemp)"
+  find "$1" -path '*/.git' -prune -o -type f -print0 |
+    LC_ALL=C sort -z > "$listing"
+  {
+    xargs -0 sha256sum < "$listing"
+    xargs -0 stat -c '%n %s %Y' < "$listing"
+  } | sha256sum
+  rm -f "$listing"
+}
+
 new_deliberation() {
   local repo="$1"
   local path="$repo/plans/model-deliberations/test.md"
@@ -74,6 +88,561 @@ test_install_is_inactive() {
     pass "install copies helpers without activating hooks"
   else
     fail "install copies helpers without activating hooks"
+  fi
+}
+
+test_install_stamps_the_bundle_release() {
+  local repo
+  local stamp
+  repo="$(new_repo stamped)"
+  "$bundle_root/install.sh" --repo "$repo" >/dev/null
+  stamp="$repo/.codex-claude-skills-version"
+
+  if [ -f "$stamp" ] &&
+    grep -qx "version: $(cat "$bundle_root/VERSION")" "$stamp" &&
+    grep -qE '^source-digest: [0-9a-f]{64}$' "$stamp"; then
+    pass "install stamps the repository with the bundle release"
+  else
+    fail "install stamps the repository with the bundle release"
+  fi
+}
+
+test_check_reports_a_current_install() {
+  local repo
+  repo="$(new_repo check_current)"
+  "$bundle_root/install.sh" --repo "$repo" >/dev/null
+
+  if "$bundle_root/install.sh" --check --repo "$repo" >/dev/null 2>&1; then
+    pass "check exits zero for a freshly installed repository"
+  else
+    fail "check exits zero for a freshly installed repository"
+  fi
+}
+
+test_check_detects_missing_and_drifted_content() {
+  local repo
+  local report
+  repo="$(new_repo check_stale)"
+  "$bundle_root/install.sh" --repo "$repo" >/dev/null
+  printf '%s\n' "# local policy" >> "$repo/.claude/skills/codex-review/SKILL.md"
+  rm -rf "$repo/.claude/skills/codex-computer-use"
+
+  report="$("$bundle_root/install.sh" --check --repo "$repo" 2>&1)"
+  if [ "$?" -eq 0 ]; then
+    fail "check reports drifted and missing skills"
+    return
+  fi
+
+  if printf '%s\n' "$report" | grep -q 'drifted   .claude/skills/codex-review' &&
+    printf '%s\n' "$report" | grep -q 'missing   .claude/skills/codex-computer-use'; then
+    pass "check reports drifted and missing skills"
+  else
+    fail "check reports drifted and missing skills"
+    printf '%s\n' "$report" >&2
+  fi
+}
+
+test_check_detects_an_older_bundle_release() {
+  local repo
+  local report
+  repo="$(new_repo check_release)"
+  "$bundle_root/install.sh" --repo "$repo" >/dev/null
+
+  # Content matches the bundle, so only the stamp can reveal that these files
+  # were installed from a different release.
+  printf 'version: 0.0.1\nsource-digest: %064d\n' 0 \
+    > "$repo/.codex-claude-skills-version"
+
+  report="$("$bundle_root/install.sh" --check --repo "$repo" 2>&1)"
+  if [ "$?" -ne 0 ] &&
+    printf '%s\n' "$report" | grep -q 'a different bundle release than'; then
+    pass "check detects content installed from a different bundle release"
+  else
+    fail "check detects content installed from a different bundle release"
+    printf '%s\n' "$report" >&2
+  fi
+}
+
+test_check_detects_another_build_of_the_same_release() {
+  local repo
+  local report
+  repo="$(new_repo check_rebuild)"
+  "$bundle_root/install.sh" --repo "$repo" >/dev/null
+
+  # Same release number, different content digest: the bundle was rebuilt from
+  # different sources. Only the digest can catch this, not the version.
+  printf 'version: %s\nsource-digest: %064d\n' "$(cat "$bundle_root/VERSION")" 0 \
+    > "$repo/.codex-claude-skills-version"
+
+  report="$("$bundle_root/install.sh" --check --repo "$repo" 2>&1)"
+  if [ "$?" -ne 0 ] &&
+    printf '%s\n' "$report" | grep -q 'from another build of the bundle'; then
+    pass "check separates another build of a release from a different release"
+  else
+    fail "check separates another build of a release from a different release"
+    printf '%s\n' "$report" >&2
+  fi
+}
+
+test_bundle_is_not_an_install_target() {
+  local check_output
+  local install_status=0
+  local doctor_status=0
+  local missing
+  local required_paths
+
+  # A sweep over a directory of repositories necessarily includes the bundle
+  # itself; it must not be reported as an out-of-date install, and installing
+  # into it must be refused rather than writing a stray stamp.
+  if ! check_output="$("$bundle_root/install.sh" --check --repo "$bundle_root" 2>&1)"; then
+    fail "the bundle reports itself as a source, not a stale install target"
+    printf '%s\n' "$check_output" >&2
+    return
+  fi
+
+  "$bundle_root/install.sh" --repo "$bundle_root" >/dev/null 2>&1 || install_status=$?
+
+  if printf '%s\n' "$check_output" | grep -q 'bundle source, not an install target' &&
+    [ "$install_status" -eq 2 ] &&
+    [ ! -e "$bundle_root/.codex-claude-skills-version" ]; then
+    pass "the bundle refuses to be installed into itself"
+  else
+    fail "the bundle refuses to be installed into itself"
+  fi
+}
+
+test_bundle_guard_survives_a_symlinked_invocation() {
+  local link_root
+  local check_output
+
+  # bundle_root is resolved with `pwd -P` so it stays comparable with the
+  # physical path git reports. Invoking through a symlink previously defeated
+  # the guard and wrote a stamp into the bundle.
+  link_root="$test_root/symlinked-bundle"
+  ln -sfn "$bundle_root" "$link_root"
+
+  check_output="$("$link_root/install.sh" --check --repo "$link_root" 2>&1)" || true
+
+  if printf '%s\n' "$check_output" | grep -q 'bundle source, not an install target' &&
+    [ ! -e "$bundle_root/.codex-claude-skills-version" ]; then
+    pass "the bundle guard holds through a symlinked invocation"
+  else
+    fail "the bundle guard holds through a symlinked invocation"
+    printf '%s\n' "$check_output" >&2
+  fi
+}
+
+test_doctor_distinguishes_no_install_from_foreign_skills() {
+  local empty_repo
+  local foreign_repo
+  local empty_output
+  local foreign_output
+  local runtime_repo
+  local runtime_output
+
+  # "no bundle is installed here" must key off bundled content, not directory
+  # existence: a repository's own unrelated skills are not an install, and
+  # review-hooks alone is one.
+  empty_repo="$(new_repo doctor_empty)"
+  foreign_repo="$(new_repo doctor_foreign)"
+  mkdir -p "$foreign_repo/.claude/skills/my-own"
+  printf 'name: mine\n' > "$foreign_repo/.claude/skills/my-own/SKILL.md"
+
+  # Capture before matching: `grep -q` closes the pipe on its first hit, and
+  # under pipefail the resulting SIGPIPE would fail the pipeline regardless of
+  # what doctor.sh reported.
+  empty_output="$("$bundle_root/doctor.sh" --repo "$empty_repo" --skip-archives 2>&1)" || true
+  foreign_output="$("$bundle_root/doctor.sh" --repo "$foreign_repo" --skip-archives 2>&1)" || true
+
+  # Negative case: a repository holding only the activated runtime IS an
+  # install, so the same string must NOT appear. Without this, a helper that
+  # always printed it would satisfy the test.
+  runtime_repo="$(new_repo doctor_runtime)"
+  mkdir -p "$runtime_repo/.review-hooks"
+  printf '2.2.0\n' > "$runtime_repo/.review-hooks/VERSION"
+  runtime_output="$("$bundle_root/doctor.sh" --repo "$runtime_repo" --skip-archives 2>&1)" || true
+
+  if printf '%s\n' "$empty_output" | grep -q 'no bundle is installed here' &&
+    printf '%s\n' "$foreign_output" | grep -q 'no bundle is installed here' &&
+    ! printf '%s\n' "$runtime_output" | grep -q 'no bundle is installed here'; then
+    pass "doctor reports no install for empty and foreign-skill repositories"
+  else
+    fail "doctor reports no install for empty and foreign-skill repositories"
+  fi
+}
+
+test_required_paths_cover_every_digest_input() {
+  local helper="$bundle_root/scripts/bundle-version.sh"
+  local consumed
+  local uncovered=""
+  local required
+  local path
+
+  # The completeness guard must cover everything the digests actually read.
+  # The incomplete-bundle test reads BUNDLE_REQUIRED_PATHS, so it cannot notice
+  # the manifest being too narrow — that is precisely how a bundle missing
+  # review-hooks/bin installed cleanly and passed --check. This asserts the
+  # invariant directly, against the digest definitions rather than the manifest.
+  # Read the arrays the digests actually expand, rather than parsing them out of
+  # the function bodies. The parsing version had the defect it was written to
+  # catch: it guarded on the COMBINED extraction being non-empty, so refactoring
+  # one digest function dropped its paths from the assertion silently.
+  consumed="$(
+    . "$helper"
+    printf '%s\n' "${BUNDLE_DIGEST_PATHS[@]}"
+    printf 'review-hooks/%s\n' "${RUNTIME_DIGEST_PATHS[@]}"
+  )"
+
+  if [ -z "$consumed" ]; then
+    fail "digest input paths could not be read from bundle-version.sh"
+    return
+  fi
+
+  # Both lists must be non-empty independently; a combined check cannot tell
+  # that one of them vanished.
+  if [ "$(printf '%s\n' "$consumed" | grep -c '^review-hooks/')" -eq 0 ] ||
+    [ "$(printf '%s\n' "$consumed" | grep -vc '^review-hooks/')" -eq 0 ]; then
+    fail "digest input paths are missing an entire list"
+    return
+  fi
+
+  # Read the manifest in a subshell, matching the sibling call sites; sourcing
+  # into the test shell leaked the arrays and functions into every later test.
+  required="$(
+    . "$helper"
+    printf '%s\n' "${BUNDLE_REQUIRED_PATHS[@]}"
+  )"
+
+  for path in $consumed; do
+    case "
+$required
+" in
+      *"
+$path
+"*) ;;
+      *) uncovered="$uncovered $path" ;;
+    esac
+  done
+
+  if [ -z "$uncovered" ]; then
+    pass "required-path manifest covers every digest input"
+  else
+    fail "required-path manifest covers every digest input"
+    printf 'uncovered:%s\n' "$uncovered" >&2
+  fi
+}
+
+test_hollow_bundle_is_refused() {
+  local bundle_copy
+  local repo
+  local case_label
+  local check_status
+  local install_status
+  local doctor_status
+
+  # Hardcoded cases on purpose. test_incomplete_bundle_is_a_requirement_error
+  # derives its cases from BUNDLE_REQUIRED_PATHS, so it shrinks when the
+  # manifest shrinks and cannot notice a requirement being dropped. These two
+  # shapes are the ones that shipped: skills trees present but empty, and a
+  # bundle-owned tool doctor.sh executes.
+  repo="$(new_repo hollow_target)"
+
+  # empty-agents-skills is the case that isolates the non-empty check: emptying
+  # .claude/skills also removes collab-config, which is a tool path, so that
+  # case is caught by the existence check and proves nothing about emptiness.
+  for case_label in empty-skills empty-agents-skills missing-tool; do
+    bundle_copy="$test_root/hollow-bundle"
+    rm -rf "$bundle_copy"
+    mkdir -p "$bundle_copy"
+    cp -R "$bundle_root/.claude" "$bundle_root/.agents" "$bundle_root/scripts" \
+      "$bundle_root/review-hooks" "$bundle_root/VERSION" \
+      "$bundle_root/install.sh" "$bundle_root/doctor.sh" "$bundle_copy/"
+
+    case "$case_label" in
+      empty-skills)
+        rm -rf "${bundle_copy:?}/.claude/skills"/* "${bundle_copy:?}/.agents/skills"/*
+        ;;
+      empty-agents-skills)
+        rm -rf "${bundle_copy:?}/.agents/skills"/*
+        ;;
+      missing-tool)
+        rm -f "$bundle_copy/scripts/manage-dependencies.py"
+        ;;
+    esac
+
+    check_status=0
+    install_status=0
+    doctor_status=0
+    "$bundle_copy/install.sh" --check --repo "$repo" >/dev/null 2>&1 || check_status=$?
+    "$bundle_copy/install.sh" --repo "$repo" >/dev/null 2>&1 || install_status=$?
+    "$bundle_copy/doctor.sh" --repo "$repo" --skip-archives >/dev/null 2>&1 || doctor_status=$?
+
+    if [ "$check_status" -ne 2 ] || [ "$install_status" -ne 2 ] ||
+      [ "$doctor_status" -ne 2 ]; then
+      fail "a hollow bundle is refused rather than installed and stamped"
+      printf 'case=%s check=%s install=%s doctor=%s\n' \
+        "$case_label" "$check_status" "$install_status" "$doctor_status" >&2
+      return
+    fi
+  done
+
+  if [ -e "$repo/.codex-claude-skills-version" ]; then
+    fail "a hollow bundle is refused rather than installed and stamped"
+    return
+  fi
+
+  pass "a hollow bundle is refused rather than installed and stamped"
+}
+
+test_review_hooks_installer_refuses_an_incomplete_module() {
+  local module_copy
+  local target
+  local rc=0
+  local dry_rc=0
+  local declared
+  local expected
+
+  # The module installer cannot source ../scripts/bundle-version.sh — it runs
+  # from inside target repositories — so it keeps its own copy of the required
+  # list. Assert the two agree rather than trusting the comment that says to
+  # keep them in sync.
+  declared="$(
+    sed -nE 's/^for required in (.*); do$/\1/p' "$bundle_root/review-hooks/install.sh" |
+      head -n 1 | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' '
+  )"
+  expected="$(
+    . "$bundle_root/scripts/bundle-version.sh"
+    printf '%s\n' "${RUNTIME_DIGEST_PATHS[@]}" | LC_ALL=C sort | tr '\n' ' '
+  )"
+
+  if [ -z "$declared" ] || [ "$declared" != "$expected" ]; then
+    fail "review-hooks installer's required list matches RUNTIME_DIGEST_PATHS"
+    printf 'declared=[%s] expected=[%s]\n' "$declared" "$expected" >&2
+    return
+  fi
+
+  module_copy="$test_root/broken-module"
+  rm -rf "$module_copy"
+  cp -R "$bundle_root/review-hooks" "$module_copy"
+  rm -rf "$module_copy/bin"
+
+  target="$(new_repo broken_module_target)"
+  "$module_copy/install.sh" --repo "$target" --dry-run >/dev/null 2>&1 || dry_rc=$?
+  "$module_copy/install.sh" --repo "$target" --no-activate >/dev/null 2>&1 || rc=$?
+
+  # Exit 2, and nothing written: the old behaviour left a partial .review-hooks/
+  # and exited 1, and --dry-run reported success on the same broken module.
+  if [ "$rc" -eq 2 ] && [ "$dry_rc" -eq 2 ] && [ ! -e "$target/.review-hooks" ]; then
+    pass "review-hooks installer refuses an incomplete module without writing"
+  else
+    fail "review-hooks installer refuses an incomplete module without writing"
+    printf 'install=%s dry-run=%s runtime-dir-exists=%s\n' \
+      "$rc" "$dry_rc" "$([ -e "$target/.review-hooks" ] && echo yes || echo no)" >&2
+  fi
+}
+
+test_incomplete_bundle_is_a_requirement_error() {
+  local bundle_copy
+  local repo
+  local check_status=0
+  local install_status=0
+  local doctor_status=0
+  local missing
+  local required_paths
+
+  # A bundle missing any input the digest needs is a broken source, not a stale
+  # target: every entry point must exit 2 ("a missing requirement"), never 1.
+  # Each removable path is exercised, because guarding only the ones that had
+  # already broken is what let this recur through a different path.
+  repo="$(new_repo incomplete_target)"
+
+  # Driven from the shared manifest rather than a copy of it, so a path added
+  # to BUNDLE_REQUIRED_PATHS is automatically exercised. The earlier version
+  # restated the guard's own five top-level paths, so it re-asserted the guard
+  # and never reached the digest inputs beneath review-hooks/.
+  required_paths="$(
+    . "$bundle_root/scripts/bundle-version.sh"
+    printf '%s\n' "${BUNDLE_REQUIRED_PATHS[@]}"
+  )"
+
+  for missing in $required_paths; do
+    bundle_copy="$test_root/incomplete-bundle"
+    rm -rf "$bundle_copy"
+    mkdir -p "$bundle_copy"
+    cp -R "$bundle_root/.claude" "$bundle_root/.agents" "$bundle_root/scripts" \
+      "$bundle_root/review-hooks" "$bundle_root/VERSION" \
+      "$bundle_root/install.sh" "$bundle_root/doctor.sh" "$bundle_copy/"
+    rm -rf "${bundle_copy:?}/$missing"
+
+    check_status=0
+    install_status=0
+    doctor_status=0
+    "$bundle_copy/install.sh" --check --repo "$repo" >/dev/null 2>&1 || check_status=$?
+    "$bundle_copy/install.sh" --repo "$repo" >/dev/null 2>&1 || install_status=$?
+    "$bundle_copy/doctor.sh" --repo "$repo" --skip-archives >/dev/null 2>&1 || doctor_status=$?
+
+    if [ "$check_status" -ne 2 ] || [ "$install_status" -ne 2 ] ||
+      [ "$doctor_status" -ne 2 ]; then
+      fail "an incomplete bundle exits 2 rather than reporting a stale target"
+      printf 'missing=%s check=%s install=%s doctor=%s\n' \
+        "$missing" "$check_status" "$install_status" "$doctor_status" >&2
+      return
+    fi
+  done
+
+  pass "an incomplete bundle exits 2 rather than reporting a stale target"
+}
+
+test_syntax_check_still_fails_on_a_missing_named_script() {
+  local helper
+  local missing_status=0
+  local present_status=0
+  local glob_status=0
+
+  # The unexpanded-glob skip must not silence an explicitly named path, or
+  # renaming a checked script would drop its coverage unnoticed.
+  #
+  # Extraction is asserted before use: if the sed anchors ever drift, `helper`
+  # is empty, `eval ""` succeeds, and every call below returns 127 — which
+  # would look like a pass without testing anything.
+  helper="$(sed -n '/^check_shell_syntax()/,/^}/p' "$bundle_root/tests/run-all.sh")"
+  if ! printf '%s\n' "$helper" | grep -q '^check_shell_syntax()' ||
+    ! printf '%s\n' "$helper" | grep -q 'bash -n'; then
+    fail "syntax check helper could not be extracted from run-all.sh"
+    return
+  fi
+
+  (
+    eval "$helper"
+    if ! declare -F check_shell_syntax >/dev/null; then
+      exit 3
+    fi
+
+    # Negative: a named path that does not exist must fail.
+    check_shell_syntax "$test_root/definitely-not-here.sh" >/dev/null 2>&1 || exit 10
+    exit 0
+  )
+  missing_status=$?
+
+  (
+    eval "$helper"
+    # Positive: a real, valid script must pass, so a helper that always fails
+    # cannot satisfy this test.
+    check_shell_syntax "$bundle_root/install.sh" >/dev/null 2>&1 || exit 11
+    exit 0
+  )
+  present_status=$?
+
+  (
+    eval "$helper"
+    # An unexpanded glob must still be skipped rather than failing.
+    check_shell_syntax "$test_root"/no-such-dir/*.sh >/dev/null 2>&1 || exit 12
+    exit 0
+  )
+  glob_status=$?
+
+  if [ "$missing_status" -eq 10 ] && [ "$present_status" -eq 0 ] &&
+    [ "$glob_status" -eq 0 ]; then
+    pass "syntax check fails on a named script that is missing"
+  else
+    fail "syntax check fails on a named script that is missing"
+    printf 'missing=%s present=%s glob=%s\n' \
+      "$missing_status" "$present_status" "$glob_status" >&2
+  fi
+}
+
+test_install_and_doctor_share_cache_exclusions() {
+  local repo
+  local doctor_output
+
+  # install.sh --check and doctor.sh must not contradict each other on the same
+  # repository. A tool cache in an installed skill is the case that historically
+  # split them.
+  repo="$(new_repo exclusions)"
+  "$bundle_root/install.sh" --repo "$repo" >/dev/null
+  mkdir -p "$repo/.claude/skills/codex-review/.pytest_cache"
+  printf 'tag\n' > "$repo/.claude/skills/codex-review/.pytest_cache/CACHEDIR.TAG"
+
+  doctor_output="$("$bundle_root/doctor.sh" --repo "$repo" --skip-archives 2>&1)"
+
+  if "$bundle_root/install.sh" --check --repo "$repo" >/dev/null 2>&1 &&
+    printf '%s\n' "$doctor_output" | grep -q 'PASS  .claude/skills/codex-review matches the bundle'; then
+    pass "install and doctor agree about tool caches in installed skills"
+  else
+    fail "install and doctor agree about tool caches in installed skills"
+    printf '%s\n' "$doctor_output" | grep 'codex-review' >&2
+  fi
+}
+
+test_runtime_digest_matches_the_review_hooks_installer() {
+  local bundle_copy
+  local helper_digest
+  local installer_digest
+  local case_label
+  local target
+
+  # doctor.sh compares runtime_source_digest() against the digest
+  # review-hooks/install.sh stamps. The two are separate implementations by
+  # necessity, so agreement on a clean tree proves nothing — exercise the file
+  # shapes that actually distinguish the idioms.
+  for case_label in clean pytest-cache spaced-name; do
+    bundle_copy="$test_root/digest-$case_label"
+    rm -rf "$bundle_copy"
+    mkdir -p "$bundle_copy"
+    cp -R "$bundle_root/review-hooks" "$bundle_copy/"
+    cp -R "$bundle_root/scripts" "$bundle_copy/"
+
+    case "$case_label" in
+      pytest-cache)
+        mkdir -p "$bundle_copy/review-hooks/scripts/.pytest_cache"
+        printf 'tag\n' > "$bundle_copy/review-hooks/scripts/.pytest_cache/CACHEDIR.TAG"
+        ;;
+      spaced-name)
+        printf 'x\n' > "$bundle_copy/review-hooks/bin/a b.txt"
+        ;;
+    esac
+
+    # Drive the real installer rather than restating its idiom here, so an edit
+    # to review-hooks/install.sh breaks this test instead of slipping through.
+    target="$(new_repo "digest-target-$case_label")"
+    "$bundle_copy/review-hooks/install.sh" \
+      --repo "$target" --no-activate >/dev/null 2>&1
+
+    helper_digest="$(
+      . "$bundle_copy/scripts/bundle-version.sh"
+      runtime_source_digest "$bundle_copy"
+    )"
+    installer_digest="$(
+      sed -nE 's/^source-digest: (.*)$/\1/p' "$target/.review-hooks/bundle-version"
+    )"
+
+    if [ "$helper_digest" != "$installer_digest" ]; then
+      fail "runtime digest helper matches the review-hooks installer ($case_label)"
+      return
+    fi
+  done
+
+  pass "runtime digest helper matches the review-hooks installer"
+}
+
+test_check_writes_nothing() {
+  local repo
+  local before
+  local after
+  repo="$(new_repo check_readonly)"
+  # Install first, so every tree exists and --check takes its comparison paths
+  # rather than short-circuiting on "missing". Digest the content and the mtimes,
+  # not just the path list, so an in-place rewrite cannot pass.
+  "$bundle_root/install.sh" --repo "$repo" >/dev/null
+
+  before="$(snapshot_repo "$repo")"
+  "$bundle_root/install.sh" --check --repo "$repo" >/dev/null 2>&1 || true
+  after="$(snapshot_repo "$repo")"
+
+  if [ "$before" = "$after" ]; then
+    pass "check never writes to the target repository"
+  else
+    fail "check never writes to the target repository"
   fi
 }
 
@@ -1102,6 +1671,22 @@ test_release_archives_contain_only_bundle_content() {
 }
 
 test_install_is_inactive
+test_install_stamps_the_bundle_release
+test_check_reports_a_current_install
+test_check_detects_missing_and_drifted_content
+test_check_detects_an_older_bundle_release
+test_check_detects_another_build_of_the_same_release
+test_bundle_is_not_an_install_target
+test_bundle_guard_survives_a_symlinked_invocation
+test_doctor_distinguishes_no_install_from_foreign_skills
+test_required_paths_cover_every_digest_input
+test_hollow_bundle_is_refused
+test_review_hooks_installer_refuses_an_incomplete_module
+test_incomplete_bundle_is_a_requirement_error
+test_syntax_check_still_fails_on_a_missing_named_script
+test_install_and_doctor_share_cache_exclusions
+test_runtime_digest_matches_the_review_hooks_installer
+test_check_writes_nothing
 test_subagent_routing_policy_is_bounded
 test_subagent_ledger_requires_canonical_root
 test_subagent_ledger_baselines_historical_agents

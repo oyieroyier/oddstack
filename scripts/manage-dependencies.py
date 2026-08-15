@@ -140,10 +140,14 @@ def active_capabilities(repo: pathlib.Path) -> list[Capability]:
     )
     profile_uses_node = bool(re.search(r"(?<![\w-])(?:node|pnpm)(?![\w-])", profile))
     profile_uses_pnpm = bool(re.search(r"(?<![\w-])pnpm(?![\w-])", profile))
+    # The integration-review skill ships a Node readiness validator, so an
+    # installed copy needs `node` even in a repository that holds no JavaScript.
+    integration_review = (repo / ".agents/skills/integration-review").is_dir()
     node_project = (
         bool(package_json)
         or (repo / "pnpm-lock.yaml").is_file()
         or profile_uses_node
+        or integration_review
     )
     pnpm_project = (
         (repo / "pnpm-lock.yaml").is_file()
@@ -174,7 +178,7 @@ def active_capabilities(repo: pathlib.Path) -> list[Capability]:
         ),
         Capability(
             "node",
-            "target repository JavaScript checks",
+            "target repository JavaScript checks and the integration-review validator (Node 15+)",
             "conditional",
             active=node_project,
             installable=False,

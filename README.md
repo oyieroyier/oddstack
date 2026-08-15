@@ -29,6 +29,7 @@ but does not activate it or change Git configuration.
 | `delegate-frontend-to-claude` | Codex       | Claude Code  | Backend-first delegation of a bounded frontend slice with resumable queues   |
 | `deliberate-with-peer`        | Either      | Other model  | Grounded proposals, critique, adjudication, and bounded consensus            |
 | `route-codex-subagents`       | Codex       | Codex        | Cost-aware Sol/Terra routing for explicitly requested internal delegation     |
+| `integration-review`          | Codex       | —            | Decisive root-owned acceptance gate over the complete tree, with a validator |
 | `setup-collaboration-hooks`   | Codex       | —            | Safe installation, adaptation, composition, and deactivation of review hooks |
 | `collab-config`               | Either      | —            | View or change every bundle setting: models, budgets, rates, audit policy    |
 | `session-handoff`             | Either      | —            | Write a resumable handoff and end an expensive session cleanly               |
@@ -99,6 +100,10 @@ The installer copies:
 review-hooks/*    →  /path/to/your/repo/review-hooks/
 ```
 
+It then generates one file that has no counterpart in the bundle,
+`/path/to/your/repo/.codex-claude-skills-version`, stamping which bundle release the copied files
+came from. It is rewritten only when its contents would change.
+
 The copied hook module remains inactive. Before writing anything, the installer compares every
 existing bundled skill and `review-hooks/` directory with the bundle. Any drift is displayed and
 preserved. After reviewing the diff, `--force` explicitly updates bundled files:
@@ -110,6 +115,33 @@ preserved. After reviewing the diff, `--force` explicitly updates bundled files:
 This makes repeat installation safe for repositories whose local skill copies have evolved. Files
 that exist only in a drifted destination are retained even with `--force`; remove obsolete local
 files as a separate, reviewable change.
+
+To report what a repository has without writing anything, use `--check`. It prints one line per
+installed tree, compares the stamp against this bundle, and exits `0` when the repository is
+current — or is the bundle itself, which is an install source and never a target — `1` when it is
+missing content, drifted, or stamped from another release, and `2` on a usage error, an unusable
+target, or a missing requirement. This is the supported way to sweep many repositories:
+
+```bash
+for repo in ~/projects/*/; do
+  root="$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null)" || continue
+  [ "$root" = "$(cd "$repo" && pwd -P)" ] || continue
+  ./install.sh --check --repo "$repo"
+done
+```
+
+Both guard lines matter. `rev-parse` alone is not enough: for a plain directory *inside* a Git
+repository it succeeds and reports that repository's root, so the sweep would silently check — and
+with `--force`, write to — a repository the operator never named. Comparing the reported root
+against the swept path keeps the sweep to actual repository roots. The loop reports per repository
+and does not aggregate; check the individual exit codes if you need a single verdict.
+
+### Two version files
+
+`VERSION` at the bundle root versions the bundle release as a whole; it is what `--check`,
+`doctor.sh`, and the installed stamp compare. `review-hooks/VERSION` separately versions the review
+runtime component and is pinned to `RUNTIME_VERSION`, which labels every `run.json`. They version
+different things and are expected to differ.
 
 To install manually:
 
@@ -602,6 +634,13 @@ replacement conventions.
       delegation-backlog-template.md
       frontend-handoff-template.md
     scripts/run-claude-frontend.sh
+  integration-review/
+    SKILL.md
+    agents/openai.yaml
+    references/
+      decisive-integration-review-gate.md
+      integration-review-artifact-template.json
+    scripts/check-integration-review-readiness.mjs
   route-codex-subagents/
     SKILL.md
     references/task-packet.md
@@ -630,11 +669,13 @@ review-hooks/
   tests/
   README.md
   install.sh
+scripts/bundle-version.sh
 scripts/configure-claude-alert.py
 scripts/manage-dependencies.py
 CLAUDE.md.codex-skills-snippet.md
 README.md
 LICENSE
+VERSION
 bootstrap.sh
 doctor.sh
 install.sh
