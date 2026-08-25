@@ -79,6 +79,7 @@ Where does a piece of state live? First rung that fits, stop there:
 
 1. Map the component tree and state ownership first; most rot is misplaced state, and pixel diffs won't reveal it.
 2. Grep for smells: `useEffect(` count per file, `useState(` clusters, `fetch(` inside components, inline hex colors, `px` literals, `any`.
-3. Check each `useEffect` against the "external systems only" bar — demand each one justify its existence.
-4. Walk the state ladder for each significant piece of state and flag any that sit on the wrong rung.
-5. Findings name the pattern, the cost, and the target shape with a code sketch — never just "refactor this".
+3. Grep for debugging-surface leakage: `JSON.stringify(` in JSX, `process.env` / `import.meta.env` values rendered, `webhook` / `callback` / `secret` / `token` strings in components outside an integrations page, response objects spread or mapped straight into a table (`Object.keys(row)`), `role ===` guards wrapping developer content. Each hit gets an audience disposition (`intuition-and-flow.md`), not a style fix.
+4. Check each `useEffect` against the "external systems only" bar — demand each one justify its existence.
+5. Walk the state ladder for each significant piece of state and flag any that sit on the wrong rung.
+6. Findings name the pattern, the cost, and the target shape with a code sketch — never just "refactor this".

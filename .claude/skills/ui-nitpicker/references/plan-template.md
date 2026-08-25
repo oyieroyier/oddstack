@@ -21,6 +21,7 @@ One sentence: who uses this and what they accomplish. (Goal, not mechanism — "
 ## 3. Journey
 
 - Entry points (where users come from).
+- Audience: the viewer persona, derived from evidence rather than a role label, and an exposure inventory — every value rendered, the action it enables for that persona, and its disposition (DROP / RELOCATE / TRANSLATE / KEEP). Nothing survives on "the developer might need it"; that need is served by logs or a developer surface (see `intuition-and-flow.md`, Audience and actionability).
 - Happy path as numbered steps — each step names what the user SEES and DOES (show-don't-tell applies to plans too).
 - Next-action anticipation: what users do after success, and how the design routes them there (preconditions checked, follow-on surfaced).
 - Exhaustive states: loading, empty (first-run vs. filtered-to-zero), error, partial data, overflow/long-content, offline if relevant.

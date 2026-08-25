@@ -9,6 +9,10 @@ Severity communicates ship risk to the product's quality bar, not personal prefe
 
 BLOCK | POLISH | SHIP
 
+## Audience check
+
+[Who this screen is for (persona from evidence, not role label). For every value that exists because a developer needed to see it: DROP / RELOCATE (to where) / TRANSLATE (to what) / KEEP (the action this persona takes on it). Content that fails this check is removed, not redesigned.]
+
 ## Paradigm check
 
 [Is this the right presentation at all? If not, the redesign comes first and everything below is secondary.]
@@ -38,6 +42,8 @@ BLOCK | POLISH | SHIP
 - Broken or missing critical states: no loading state, no empty state, error state that dead-ends the user.
 - Inaccessible core flow: keyboard trap, unlabeled interactive control, contrast below WCAG AA on primary content.
 - Wrong paradigm for the data or task (table where a chart is needed, modal where a page is needed) on a primary flow.
+- Secrets or exploitable internals rendered to anyone who is not their operator: API keys, tokens, webhook/callback/IPN URLs, request payloads, stack traces, internal hostnames. A security finding as much as a design one; the page being "admin-only" is not a defence when the admin is the client.
+- Developer artefacts on a primary end-user flow (checkout, payment, signup, onboarding): raw ids, provider references, initiation code, enum-cased statuses. Disposition required (drop/relocate/translate) — restyling is not a fix.
 - Frontend anti-pattern from `frontend-standards.md` in the "blocking" tier.
 
 ### D1 — Fix before ship
@@ -48,6 +54,8 @@ BLOCK | POLISH | SHIP
 - Native/default controls where the project's component kit has a superior primitive (native date input vs. shadcn date range picker; browser `confirm()` vs. alert dialog; `<select>` vs. combobox for long lists).
 - Missing hover/focus/active affordances on interactive elements.
 - Single-value input where the real-world task needs a range or multi-select (single date filter → date range filter is the canonical case).
+- Developer-shaped data on a secondary end-user surface where the viewer has no action to take: UUIDs, `txn_`/`pi_` references, `true`/`false` cells, ISO timestamps with milliseconds, JSON blobs, sandbox/test-mode badges, tables that mirror an API response column-for-column. Each gets a disposition, not a monospace treatment.
+- Role-gated developer blocks on a page whose primary persona is not a developer (`role === 'admin' && <WebhookCard />`). The fix is a separate surface, not a better-styled conditional.
 
 ### D2 — Fix soon
 
@@ -79,7 +87,8 @@ Work top-down, then squint:
 When given a screenshot rather than code:
 
 1. Identify the screen's job in one sentence. If you can't, that's the first finding.
-2. Run the paradigm check before pixel critique.
-3. Estimate the spacing/type scale from the image and flag internal inconsistencies (you can measure ratios even without the CSS).
-4. Ask for the design spec/tokens if not provided and the project plausibly has one — do not review spec-blind when the spec exists.
-5. Deliver findings with regions ("top-right stat card", "second row of the table") so they're actionable without annotation tools.
+2. Name the viewer persona from the copy's addressee, the surrounding actions, and where the screen sits — never from a role label — and run the audience check. Anything a developer would recognise and the persona would not is a finding with a disposition.
+3. Run the paradigm check before pixel critique.
+4. Estimate the spacing/type scale from the image and flag internal inconsistencies (you can measure ratios even without the CSS).
+5. Ask for the design spec/tokens if not provided and the project plausibly has one — do not review spec-blind when the spec exists.
+6. Deliver findings with regions ("top-right stat card", "second row of the table") so they're actionable without annotation tools.
