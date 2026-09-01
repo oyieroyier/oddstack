@@ -86,10 +86,19 @@ when the active environment visibly exposes them.
 Project-local installation is recommended because the skills and their assumptions can be reviewed
 and versioned with the repository.
 
-From this repository or an extracted release bundle:
+From this repository, or from a release bundle downloaded from the
+[releases page](https://github.com/oyieroyier/oddstack/releases):
 
 ```bash
 ./install.sh /path/to/your/repo
+```
+
+To install a pinned release rather than tracking `main`:
+
+```bash
+gh release download --repo oyieroyier/oddstack --pattern 'codex-claude-skills.tar.gz'
+tar -xzf codex-claude-skills.tar.gz
+./codex-claude-skills/install.sh /path/to/your/repo
 ```
 
 The installer copies:
@@ -703,7 +712,23 @@ bash tests/run-all.sh
 ```
 
 When behavior changes, update the relevant skill, this README, and both archives in the same commit.
-Use Git tags or GitHub releases when consumers need a stable version instead of tracking `main`.
+
+Consumers who need a stable version instead of tracking `main` use the tagged releases. To cut one,
+bump `VERSION`, repackage, confirm `tests/run-all.sh` passes, then tag and publish with both
+archives attached:
+
+```bash
+printf '%s\n' "2.5.2" > VERSION
+./package.sh
+bash tests/run-all.sh
+git commit -am "Release 2.5.2"
+git tag -a v2.5.2 -m "codex-claude-skills 2.5.2"
+git push origin main --follow-tags
+gh release create v2.5.2 --verify-tag --title "v2.5.2" --notes "..." \
+  codex-claude-skills.tar.gz codex-claude-skills.zip
+```
+
+`review-hooks/VERSION` is versioned independently and is not bumped by a bundle release.
 
 ## Author
 
