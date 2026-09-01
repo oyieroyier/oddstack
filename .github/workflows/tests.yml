@@ -8,6 +8,12 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      # ripgrep is a required capability (scripts/manage-dependencies.py), but
+      # GitHub-hosted runners do not ship it. Without this, doctor.sh and
+      # bootstrap.sh fail their dependency check and the dependency-path
+      # fixtures cannot stub `rg`.
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
       - name: Run all verification suites
         run: bash tests/run-all.sh
       # TODO(DX-05): add a shellcheck step once the warning backlog is triaged.

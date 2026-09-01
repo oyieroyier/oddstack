@@ -1170,13 +1170,22 @@ test_reciprocal_frontend_audit_contract() {
   fi
 }
 
+# Builds a PATH holding only the named commands. A command missing from the
+# host must abort here: `ln -s "$(command -v missing)"` would otherwise create a
+# broken link and the caller would fail its own assertion, reporting a host gap
+# as an unrelated behavioural regression.
 make_dependency_path() {
   local path="$1"
+  local resolved
   shift
 
   mkdir -p "$path"
   for command_name in "$@"; do
-    ln -s "$(command -v "$command_name")" "$path/$command_name"
+    if ! resolved="$(command -v "$command_name")"; then
+      echo "make_dependency_path: $command_name is not installed on this host" >&2
+      return 1
+    fi
+    ln -s "$resolved" "$path/$command_name"
   done
 }
 
@@ -1186,7 +1195,8 @@ test_dependency_check_is_profile_aware() {
   local output
   repo="$(new_repo dependency-profile)"
   printf '%s\n' "AI_REVIEW_ENABLED=1" >"$repo/.review-hooks.conf"
-  make_dependency_path "$fake_bin" git python3 rg sed awk grep find
+  make_dependency_path "$fake_bin" git python3 rg sed awk grep find ||
+    { fail "dependency installer activates AI-review utilities without managing model credentials"; return; }
 
   output="$(python3 "$bundle_root/scripts/manage-dependencies.py" \
     install \
@@ -1208,7 +1218,8 @@ test_dependency_install_is_explicit_and_dry_runnable() {
   local fake_bin="$test_root/dependency-install-bin"
   local output
   repo="$(new_repo dependency-install)"
-  make_dependency_path "$fake_bin" git python3 sed awk grep find sha256sum
+  make_dependency_path "$fake_bin" git python3 sed awk grep find sha256sum ||
+    { fail "dependency installation has an explicit non-mutating dry run"; return; }
 
   output="$(python3 "$bundle_root/scripts/manage-dependencies.py" \
     install \
@@ -1230,7 +1241,8 @@ test_missing_model_clis_are_manual_capabilities() {
   local fake_bin="$test_root/dependency-model-bin"
   local output
   repo="$(new_repo dependency-model)"
-  make_dependency_path "$fake_bin" git python3 rg sed awk grep find sha256sum
+  make_dependency_path "$fake_bin" git python3 rg sed awk grep find sha256sum ||
+    { fail "missing model CLIs require manual setup without blocking core installation"; return; }
 
   if output="$(python3 "$bundle_root/scripts/manage-dependencies.py" \
     check \
