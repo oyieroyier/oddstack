@@ -73,6 +73,8 @@ Use this format in your final message:
 ```markdown
 Implemented via Codex, then reviewed by Claude.
 
+Waiting on you: [decision, approval, or blocker — or "nothing"]
+
 Changed:
 
 - `path/to/file`: [what changed]

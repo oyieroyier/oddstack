@@ -34,6 +34,9 @@ General rules:
 9. After Claude authors non-trivial frontend code, give Codex a read-only logic-audit opportunity
    under the configured peer-audit policy. Claude owns fixes and design quality; the operator owns
    physical page approval.
+10. When a step needs no operator input, keep going. Stop and ask only when you cannot continue
+    without the operator, or before anything destructive or outward-facing (commit, push, merge,
+    deletion). When a long run ends, put anything waiting on the operator first in the reply.
 
 If the optional collaboration review hooks are activated:
 

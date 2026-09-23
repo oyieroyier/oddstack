@@ -34,8 +34,9 @@ session can resume from it.
 
 - Leave the working tree exactly as it stands; never commit, stash, reset, or
   reformat to make the handoff look tidy. Record the mess instead.
-- State in the final reply where the handoff lives and what the resume prompt
-  is, so the operator can start the next session by pointing at it.
+- Open the final reply with anything the operator must decide before the next
+  session can proceed, then state where the handoff lives and what the resume
+  prompt is, so the operator can start the next session by pointing at it.
 - If any queue still contains open work, the handoff records it as open; a
   handoff never marks a delegation complete.
 

@@ -228,6 +228,7 @@ If Codex cannot run:
 
 Report:
 
+- Anything waiting on the user — a decision, an approval, a blocker — first. Say so when nothing is.
 - What Codex was asked to do.
 - What files changed.
 - What Claude independently checked.

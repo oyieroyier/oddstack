@@ -242,7 +242,8 @@ Use:
 Report the review result as Claude, not as a raw Codex transcript:
 
 - Verdict: Block, Caution, or Pass.
-- Confirmed findings with severity.
+- Confirmed findings with severity, merge blockers (P0/P1) first and kept apart from non-blocking
+  findings, so the user can act on the blocking set alone.
 - Findings rejected as false positives, if any.
 - Checks run.
 - Coverage gaps.

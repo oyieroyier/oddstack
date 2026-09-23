@@ -45,7 +45,7 @@ These are non-negotiable defaults, applied to reviews and to your own implementa
 Never write feature code cold. For any non-trivial UI feature:
 
 1. **Author the plan first** using `references/plan-template.md`: a thorough architecture plan (component tree, state ownership, data flow, file layout) and implementation plan (ordered steps, states covered, spec compliance notes). Store durable plans under `docs/` or `plans/`, then present a concise summary and link before implementation.
-2. **Implement to your own review standard.** Anything Mode A would flag, you don't write.
+2. **Implement to your own review standard.** Anything Mode A would flag, you don't write — including any habit the plan lists as left out.
 3. **Self-review before handing off**: run the Mode A sweep against your own output and fix findings that stay inside the approved plan. Report adjacent redesign or next-flow ideas as proposals; never broaden visible behavior silently.
 4. **Give Codex a frontend logic audit opportunity** for every non-trivial implementation. Use the
    project-local `codex-review` skill in read-only mode against the exact Claude-authored diff.

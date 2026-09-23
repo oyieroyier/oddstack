@@ -63,6 +63,7 @@ frontend work. Otherwise set the backlog's next owner to Codex and leave an exac
 - Responsive behavior: [requirements]
 - Accessibility: [keyboard, labels, focus, announcements]
 - Copy constraints: [terms and prohibited wording]
+- Design habits to leave out: [default styling this surface must not use unless `apps/web/DESIGN_SYSTEM.md` specifies it — e.g. tinted page backgrounds, numbered section labels, pill-shaped buttons]
 - Analytics/telemetry: [events, or explicitly none]
 - Tests: [required coverage]
 
@@ -92,10 +93,11 @@ If `audit:pages` reports stale approvals, demote only the affected routes with t
 
 Return:
 
-1. Backend review verdict and evidence-backed findings, including whether the frontend contract is safe to consume.
-2. Summary of frontend behavior implemented.
-3. Files changed and why.
-4. Commands run with pass/fail/baseline outcomes.
-5. Remaining visual review, operator escalation, or risk.
-6. Durable backlog status, next owner, and every open task id.
+1. Anything waiting on Codex or the operator — blockers, escalations, required visual review — or "nothing".
+2. Backend review verdict and evidence-backed findings, including whether the frontend contract is safe to consume.
+3. Summary of frontend behavior implemented.
+4. Files changed and why.
+5. Commands run with pass/fail/baseline outcomes.
+6. Remaining risk.
+7. Durable backlog status, next owner, and every open task id.
 ````

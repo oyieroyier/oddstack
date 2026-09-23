@@ -30,6 +30,7 @@ One sentence: who uses this and what they accomplish. (Goal, not mechanism — "
 
 - Spec/token sources consulted (files/paths).
 - Tokens, primitives, and patterns this feature consumes.
+- Habits left out: default styling choices this feature will not make because the spec and strongest existing screens do not use them (e.g. tinted page backgrounds, numbered section labels, pill-shaped buttons, gradient cards). Anything built from habit rather than the spec is a spec deviation.
 - Any tension with the spec → resolved in the spec's favor, or escalated to the user BEFORE implementation. Never silently deviated.
 
 ## 5. Architecture
