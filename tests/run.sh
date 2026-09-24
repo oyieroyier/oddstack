@@ -1078,13 +1078,13 @@ test_peer_runner_dry_runs() {
     --prompt-file "$prompt" \
     --deliberation-file "$deliberation" \
     --preferences "$preferences" \
-    --dry-run 2>&1 | grep -q 'model: claude-fable-5' &&
+    --dry-run 2>&1 | grep -q 'model: claude-opus-5-5' &&
     "$bundle_root/.claude/skills/deliberate-with-peer/scripts/run-codex-peer.sh" \
       --repo "$repo" \
       --prompt-file "$prompt" \
       --deliberation-file "$deliberation" \
       --preferences "$preferences" \
-      --dry-run 2>&1 | grep -q 'model: gpt-5.6-sol'; then
+      --dry-run 2>&1 | grep -q 'model: gpt-6-astra'; then
     pass "peer runners resolve configurable models without launching either CLI"
   else
     fail "peer runners resolve configurable models without launching either CLI"

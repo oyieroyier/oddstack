@@ -1,6 +1,6 @@
 ---
 name: route-codex-subagents
-description: Route explicitly requested Codex subagent or parallel-agent work through bounded, cost-aware roles. Use when the user asks Codex to spawn, delegate to, or run subagents; when an applicable AGENTS.md or skill requires internal Codex delegation; or when resuming an existing multi-agent workflow. Keeps Sol as orchestrator and reviewer, sends bounded exploration and implementation to Terra when available, limits fan-out, prevents recursive delegation, and requires acceptance evidence.
+description: Route explicitly requested Codex subagent or parallel-agent work through bounded, cost-aware roles. Use when the user asks Codex to spawn, delegate to, or run subagents; when an applicable AGENTS.md or skill requires internal Codex delegation; or when resuming an existing multi-agent workflow. Keeps Sol as orchestrator and reviewer, sends bounded exploration and implementation to Astra when available, limits fan-out, prevents recursive delegation, and requires acceptance evidence.
 ---
 
 # Route Codex Subagents
@@ -81,27 +81,27 @@ or terminally failed.
 
 | Role | Model | Effort | Use |
 | --- | --- | --- | --- |
-| Explorer | `gpt-5.6-terra` | `low` | Read-only code mapping, logs, documentation, test triage |
-| Implementer | `gpt-5.6-terra` | `medium` | One bounded write slice from an approved contract |
-| Reviewer | Parent Sol or `gpt-5.6-sol` | `medium` | Consequential review, ambiguity, failed-worker adjudication |
+| Explorer | `gpt-6-astra` | `low` | Read-only code mapping, logs, documentation, test triage |
+| Implementer | `gpt-6-astra` | `medium` | One bounded write slice from an approved contract |
+| Reviewer | Parent Sol or `gpt-6-sol` | `medium` | Consequential review, ambiguity, failed-worker adjudication |
 
 Choose context fidelity independently from the worker role. Prefer `fork_turns = "none"` with a
 self-contained packet, or a small positive recent-turn count, to avoid copying irrelevant context.
 Use a full-history fork when the task genuinely depends on the complete thread.
 
-Apply the explicit Terra model and effort override whenever the active spawn interface permits it.
+Apply the explicit Astra model and effort override whenever the active spawn interface permits it.
 Some Codex interfaces accept that override with a full-history fork; others require full-history
 children to inherit the parent model and accept overrides only for bounded forks. Follow the active
-tool contract. If it forbids Terra plus full history, choose explicitly between a bounded Terra
+tool contract. If it forbids Astra plus full history, choose explicitly between a bounded Astra
 packet and a full-history inherited-model child; never assume the fork alone selected either model.
 
-Use Terra High only for one bounded task that remains difficult after the primary narrows it. Return
-ambiguous contracts to the Sol primary instead of asking Terra to infer them. Use a Sol child only
+Use Astra High only for one bounded task that remains difficult after the primary narrows it. Return
+ambiguous contracts to the Sol primary instead of asking Astra to infer them. Use a Sol child only
 when an independent consequential review materially improves the result; ordinary synthesis stays
 in the primary Sol thread.
 
 Use Luna only when the active spawn interface exposes it and the operator explicitly enabled it.
-Do not silently substitute Sol when Terra is unavailable. Keep the work local or report the
+Do not silently substitute Sol when Astra is unavailable. Keep the work local or report the
 capacity blocker.
 
 ## Constrain every worker
@@ -167,7 +167,7 @@ Within the cumulative spawn and delegated-turn budgets, choose one response to a
 uncertain return:
 
 1. send one focused follow-up to the same worker;
-2. narrow the packet and retry once at the same or one-higher Terra effort;
+2. narrow the packet and retry once at the same or one-higher Astra effort;
 3. take the work back into the primary thread; or
 4. invoke one Sol reviewer for consequential ambiguity.
 

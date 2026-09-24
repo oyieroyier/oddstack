@@ -28,7 +28,7 @@ but does not activate it or change Git configuration.
 | `ui-nitpicker`                | Claude Code | Codex        | UI implementation plus optional/required Codex frontend-logic audit          |
 | `delegate-frontend-to-claude` | Codex       | Claude Code  | Backend-first delegation of a bounded frontend slice with resumable queues   |
 | `deliberate-with-peer`        | Either      | Other model  | Grounded proposals, critique, adjudication, and bounded consensus            |
-| `route-codex-subagents`       | Codex       | Codex        | Cost-aware Sol/Terra routing for explicitly requested internal delegation     |
+| `route-codex-subagents`       | Codex       | Codex        | Cost-aware Sol/Astra routing for explicitly requested internal delegation     |
 | `integration-review`          | Codex       | —            | Decisive root-owned acceptance gate over the complete tree, with a validator |
 | `setup-collaboration-hooks`   | Codex       | —            | Safe installation, adaptation, composition, and deactivation of review hooks |
 | `collab-config`               | Either      | —            | View or change every bundle setting: models, budgets, rates, audit policy    |
@@ -424,9 +424,9 @@ mkdir -p ~/.config/codex-claude-skills
 cp preferences.example.json ~/.config/codex-claude-skills/preferences.json
 ```
 
-The example selects Claude Fable 5/xhigh and GPT 5.6 Sol/high for peer deliberation and architecture
-work, a two-call maximum, resume-within-task sessions, Codex-authored architecture, and an `offer`
-peer-audit policy. Only the two `deliberate-with-peer` runners read the model and effort fields,
+The example selects Claude Opus 5.5/high and GPT-6 Astra/medium for peer deliberation and
+architecture work, GPT-6 Sol/medium for `codex-review`, a two-call maximum, resume-within-task
+sessions, Codex-authored architecture, and an `offer` peer-audit policy. Only the two `deliberate-with-peer` runners read the model and effort fields,
 and each field configures the peer call only: `codex.*` applies when Claude initiates and calls
 Codex, `claude.*` applies when Codex initiates and calls Claude. The initiating session always
 runs at whatever model its own CLI is currently set to—in Claude Code, the window's `/model`
@@ -440,11 +440,11 @@ values preserve each environment's normal defaults. No fallback model is selecte
 ### Cost-aware Codex subagent routing
 
 Internal Codex delegation uses roles rather than letting each workflow choose a model independently.
-The recommended shape is a Sol primary thread, bounded Terra workers, and at most one Sol reviewer
+The recommended shape is a Sol primary thread, bounded Astra workers, and at most one Sol reviewer
 when risk or unresolved ambiguity warrants it:
 
 ```text
-Sol primary → Terra explorer or implementer → primary verification → optional Sol review
+Sol primary → Astra explorer or implementer → primary verification → optional Sol review
 ```
 
 Start with no more than two children, cap open child threads at three, and cap each user task at
@@ -460,20 +460,20 @@ confirms that no child exists, preserving retry capacity without weakening accou
 Prohibit descendant spawning and prefer bounded context packets, while allowing justified
 full-history forks according to the active spawn contract. Reconcile the observable agent tree
 before and after child turns; an unexpected descendant is charged, violates the ledger, and stops
-further delegation. Terra workers must return an acceptance ledger; the primary rejects completion
+further delegation. Astra workers must return an acceptance ledger; the primary rejects completion
 when any criterion is missing or uncertain. Deterministic searches and checks stay in the primary
 thread instead of consuming an agent call.
 
 Keep model and effort selection in Codex custom-agent profiles or trusted project configuration.
-Skills should request `terra_explorer`, `terra_implementer`, or `sol_reviewer` by role and remain
-independent of model pricing. Terra Medium is the implementation default; Terra Low is reserved for
+Skills should request `astra_explorer`, `astra_implementer`, or `sol_reviewer` by role and remain
+independent of model pricing. Astra Medium is the implementation default; Astra Low is reserved for
 read-heavy exploration. An unavailable cheaper adapter never silently fans out into Sol children.
 
 See [Codex subagent routing architecture](docs/harness/codex-subagent-routing-architecture.md) for
 the routing seam, task packet, configuration, escalation rules, and worker return contract.
 
 The installable `route-codex-subagents` skill applies this policy when a user, `AGENTS.md`, or
-another skill explicitly requests subagents. It uses explicit Terra model/effort overrides where
+another skill explicitly requests subagents. It uses explicit Astra model/effort overrides where
 the active spawn contract permits them, tracks concurrent and cumulative fan-out, and centralizes
 the acceptance-ledger and escalation contract. Installing the bundle makes the workflow available
 without changing personal Codex model or quota settings.
@@ -499,10 +499,10 @@ serve different work with different models:
 
 ```json
 {
-  "claude": { "model": "claude-fable-5", "effort": "xhigh" },
-  "codex":  { "model": "gpt-5.6-sol", "effort": "high" },
+  "claude": { "model": "claude-opus-5-5", "effort": "high" },
+  "codex":  { "model": "gpt-6-astra", "effort": "medium" },
   "skills": {
-    "codex-review": { "model": "gpt-5.6-terra", "effort": "medium" }
+    "codex-review": { "model": "gpt-6-sol", "effort": "medium" }
   }
 }
 ```
@@ -533,7 +533,7 @@ entry reports tokens only and says how to price it:
 ```json
 {
   "modelRates": {
-    "claude-fable-5": { "input": 5.00, "output": 25.00 }
+    "claude-opus-5-5": { "input": 4.00, "output": 20.00 }
   }
 }
 ```

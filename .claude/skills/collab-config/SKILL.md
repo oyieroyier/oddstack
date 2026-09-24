@@ -34,10 +34,10 @@ dodge a repository cap. Explicit runner flags always outrank the file.
 
 ```json
 {
-  "claude": { "model": "claude-fable-5", "effort": "xhigh" },
-  "codex":  { "model": "gpt-5.6-sol", "effort": "high" },
+  "claude": { "model": "claude-opus-5-5", "effort": "high" },
+  "codex":  { "model": "gpt-6-astra", "effort": "medium" },
   "skills": {
-    "codex-review": { "model": "gpt-5.6-terra", "effort": "medium" }
+    "codex-review": { "model": "gpt-6-sol", "effort": "medium" }
   }
 }
 ```
@@ -54,7 +54,7 @@ without an entry reports tokens only rather than guessing:
 ```json
 {
   "modelRates": {
-    "claude-fable-5": { "input": 5.00, "output": 25.00 }
+    "claude-opus-5-5": { "input": 4.00, "output": 20.00 }
   }
 }
 ```

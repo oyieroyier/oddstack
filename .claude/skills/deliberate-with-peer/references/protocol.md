@@ -63,13 +63,13 @@ Supported shape:
 ```json
 {
   "claude": {
-    "model": "claude-fable-5",
-    "effort": "xhigh",
+    "model": "claude-opus-5-5",
+    "effort": "high",
     "maxBudgetUsd": null
   },
   "codex": {
-    "model": "gpt-5.6-sol",
-    "effort": "high"
+    "model": "gpt-6-astra",
+    "effort": "medium"
   },
   "deliberation": {
     "maxRounds": 2,
