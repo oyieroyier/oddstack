@@ -33,7 +33,9 @@ These are non-negotiable defaults, applied to reviews and to your own implementa
 ### Mode A — Nitpick review (screenshots, live UI, or frontend code)
 
 1. **Ground yourself without overloading context.** Start with `git status --short`, `git diff --stat`, `git diff --name-only`, and targeted `rg`. Read the smallest applicable project guidance set, then targeted excerpts from the design spec, tokens, theme, and primitives used by the touched surface. Do not load an entire component library. Identify the stack from the relevant code.
-2. **Sweep in three passes**, using `references/design-review-rubric.md`:
+2. **Sweep in three passes.** Always read `references/design-review-rubric.md`. Open
+   `references/intuition-and-flow.md` only when the change alters a user journey, and
+   `references/frontend-standards.md` only when the diff adds state, effects or data fetching.
    - _Stunning_: hierarchy, spacing rhythm, typography, color, depth, motion, density, dark mode, states (loading/empty/error/hover/focus).
    - _Intuitive_: journey logic, next-action anticipation, copy economy, show-don't-tell, information architecture — see `references/intuition-and-flow.md`.
    - _Engineering_: architecture, state management, performance, accessibility — see `references/frontend-standards.md`.
@@ -44,11 +46,16 @@ These are non-negotiable defaults, applied to reviews and to your own implementa
 
 Never write feature code cold. For any non-trivial UI feature:
 
-1. **Author the plan first** using `references/plan-template.md`: a thorough architecture plan (component tree, state ownership, data flow, file layout) and implementation plan (ordered steps, states covered, spec compliance notes). Store durable plans under `docs/` or `plans/`, then present a concise summary and link before implementation.
+1. **Author the plan first.** For a change to one surface with no new state, write the plan as 3-5
+   lines in chat. When the feature spans several surfaces or adds state, data flow or a new route,
+   use `references/plan-template.md`: an architecture plan (component tree, state ownership, data
+   flow, file layout) and an implementation plan (ordered steps, states covered, spec compliance
+   notes). Store it under `plans/`, then present a short summary and link before implementation.
 2. **Implement to your own review standard.** Anything Mode A would flag, you don't write — including any habit the plan lists as left out.
 3. **Self-review before handing off**: run the Mode A sweep against your own output and fix findings that stay inside the approved plan. Report adjacent redesign or next-flow ideas as proposals; never broaden visible behavior silently.
-4. **Give Codex a frontend logic audit opportunity** for every non-trivial implementation. Use the
-   project-local `codex-review` skill in read-only mode against the exact Claude-authored diff.
+4. **Give Codex a frontend logic audit opportunity** when the diff changes state, data flow, API
+   consumption, auth or money UI. Skip it for styling, copy and layout-only changes, and say in the
+   handoff that you skipped it and why. Use the project-local `codex-review` skill in read-only mode against the exact Claude-authored diff.
    Require a `BLOCK | CAUTION | PASS` verdict focused on state and data flow, backend-contract
    consumption, auth and client trust, loading/error/retry behavior, accessibility semantics,
    rendering and performance, and test sensitivity. Visual taste remains Claude's responsibility,
@@ -65,11 +72,11 @@ Resolve the peer-audit policy in this order:
 4. `peerAudit.policy` in `~/.config/codex-claude-skills/preferences.json`;
 5. `offer`.
 
-`required` runs the audit unless the user explicitly skips it and records why. `offer` reports the
+`required` runs the audit whenever step 4 calls for one, unless the user explicitly skips it and records why. `offer` reports the
 available audit without consuming Codex quota implicitly. `off` records that peer audit is disabled.
 Claude adjudicates every returned finding instead of relaying raw output. A capacity, auth, or
-execution failure is `INCONCLUSIVE`, never a pass; preserve the exact resume prompt. Use at most one
-focused recheck after material fixes.
+execution failure is `INCONCLUSIVE`, never a pass; preserve the exact resume prompt. Recheck only after a
+`BLOCK` verdict.
 
 ## Communication style
 
